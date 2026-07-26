@@ -1,9 +1,0 @@
-{
-  "document": "localized_two_set_configuration_theorem/localized_two_set_configuration_theorem.md",
-  "whyLinks": [
-    "localized_two_set_configuration_theorem/conormal_canonical_relation/conormal_canonical_relation.md",
-    "localized_two_set_configuration_theorem/inverse_function_theorem_for_smooth_manifolds/inverse_function_theorem_for_smooth_manifolds.md",
-    "localized_two_set_configuration_theorem/sobolev_smoothing_for_generalized_radon_transforms/sobolev_smoothing_for_generalized_radon_transforms.md",
-    "localized_two_set_configuration_theorem/two_set_configuration_theorem/two_set_configuration_theorem.md"
-  ]
-}

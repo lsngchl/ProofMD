@@ -1,8 +1,0 @@
-{
-  "document": "boundedness_argument/boundedness_argument.md",
-  "whyLinks": [
-    "boundedness_argument/bolzano_weierstrass_subsequence/bolzano_weierstrass_subsequence.md",
-    "boundedness_argument/sequential_continuity/sequential_continuity.md",
-    "boundedness_argument/convergent_sequence_is_bounded/convergent_sequence_is_bounded.md"
-  ]
-}

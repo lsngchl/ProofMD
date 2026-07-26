@@ -1,8 +1,0 @@
-{
-  "document": "uniform_continuity_argument/uniform_continuity_argument.md",
-  "whyLinks": [
-    "boundedness_argument/bolzano_weierstrass_subsequence/bolzano_weierstrass_subsequence.md",
-    "uniform_continuity_argument/nearby_sequences_share_limit/nearby_sequences_share_limit.md",
-    "boundedness_argument/sequential_continuity/sequential_continuity.md"
-  ]
-}

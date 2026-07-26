@@ -10,7 +10,6 @@ A small, local-first Markdown viewer that renders LaTeX written with either
 - Viewer source: `index.html` and `src/`
 - Windows desktop wrapper and installer scripts: `desktop/LeanMD/`
 - LeanMD document workspace: `leanmd/`
-- Hierarchical LeanMD migration workspace: `leanmd-legacy/`
 - Application asset scripts: `scripts/`
 - Automated tests: `test/`
 
