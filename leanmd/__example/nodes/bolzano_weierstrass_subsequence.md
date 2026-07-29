@@ -1,26 +1,25 @@
-# 닫힌 구간에서 수렴 부분수열의 존재
+# Convergent Subsequences in a Closed Interval
 
-닫힌 구간 \([a,b]\) 안의 임의의 수열 \((x_n)\)은 구간 안의 어떤 점으로 수렴하는 부분수열을 갖는다.
+Every sequence \((x_n)\) in a closed interval \([a,b]\) has a subsequence that converges to a point in the interval.
 
-\(a=b\)이면 모든 항이 \(a\)이므로 자명하다.
-이제 \(a<b\)라고 하자.
-구간 \([a,b]\)를 길이가 같은 두 닫힌 구간으로 나누면 그중 적어도 하나에는 수열의 항이 무한히 많이 들어 있다.
-그런 절반을 \(I_1\)이라 하자.
-같은 과정을 반복하여
+If \(a=b\), every term equals \(a\), so the claim is immediate.
+Now suppose \(a<b\).
+Divide \([a,b]\) into two closed intervals of equal length.
+At least one of them contains infinitely many terms of the sequence; denote such a half by \(I_1\).
+Repeating this procedure produces nested intervals
 
 \[
 I_1\supseteq I_2\supseteq I_3\supseteq\cdots
 \]
 
-를 만들 수 있다.
-각 \(I_k\)에는 수열의 항이 무한히 많이 들어 있고 그 길이는 \((b-a)/2^k\)이다.
+such that every \(I_k\) contains infinitely many terms of the sequence and has length \((b-a)/2^k\).
 
-실수의 완비성에서 나오는 축소구간 정리에 따라 모든 \(I_k\)에 속하는 점 \(x\)가 존재한다 ([축소구간 정리](./nested_interval_theorem.md "why")).
-이제 지수 \(n_1<n_2<\cdots\)를 차례로 선택하되 \(x_{n_k}\in I_k\)가 되게 한다.
-\(x\)와 \(x_{n_k}\)가 모두 \(I_k\)에 속하므로
+By the nested interval theorem, which follows from the completeness of \(\mathbb{R}\), there exists a point \(x\) belonging to every \(I_k\) ([Nested Interval Theorem](./nested_interval_theorem.md "why")).
+Choose indices \(n_1<n_2<\cdots\) successively so that \(x_{n_k}\in I_k\).
+Since both \(x\) and \(x_{n_k}\) belong to \(I_k\),
 
 \[
 |x_{n_k}-x|\le \frac{b-a}{2^k}\longrightarrow0.
 \]
 
-따라서 \(x_{n_k}\to x\)이고, \(x\in I_1\subseteq[a,b]\)이다.
+Therefore \(x_{n_k}\to x\), and \(x\in I_1\subseteq[a,b]\).

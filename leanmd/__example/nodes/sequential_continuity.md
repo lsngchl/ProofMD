@@ -1,15 +1,14 @@
-# 연속성의 수열 판정
+# Sequential Criterion for Continuity
 
-함수 \(f:[a,b]\to\mathbb{R}\)가 [연속](../root.md "recall")이고 수열 \((x_n)\)이 \([a,b]\) 안에서 \(x\in[a,b]\)로 수렴하면
+Let \(f:[a,b]\to\mathbb{R}\) be [continuous](../root.md "recall"), and let \((x_n)\) be a sequence in \([a,b]\) that converges to \(x\in[a,b]\).
+Then
 
 \[
-f(x_n)\longrightarrow f(x)
+f(x_n)\longrightarrow f(x).
 \]
 
-이다.
-
-실제로 \(\varepsilon>0\)을 주자.
-\(f\)가 \(x\)에서 연속이므로 어떤 \(\delta>0\)가 존재하여
+Let \(\varepsilon>0\).
+Since \(f\) is continuous at \(x\), there exists \(\delta>0\) such that
 
 \[
 |y-x|<\delta
@@ -17,6 +16,6 @@ f(x_n)\longrightarrow f(x)
 |f(y)-f(x)|<\varepsilon
 \]
 
-이다.
-한편 \(x_n\to x\)이므로 충분히 큰 모든 \(n\)에 대해 \(|x_n-x|<\delta\)이다.
-따라서 충분히 큰 모든 \(n\)에 대해 \(|f(x_n)-f(x)|<\varepsilon\)이고, 원하는 수렴이 성립한다.
+for every \(y\in[a,b]\).
+Since \(x_n\to x\), we have \(|x_n-x|<\delta\) for all sufficiently large \(n\).
+Therefore \(|f(x_n)-f(x)|<\varepsilon\) for all sufficiently large \(n\), which proves the desired convergence.

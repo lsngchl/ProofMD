@@ -1,33 +1,26 @@
-# 수렴하는 실수열의 유계성
+# Convergent Real Sequences Are Bounded
 
-실수열 \((a_n)\)이 \(L\in\mathbb{R}\)로 수렴한다고 하자.
-수렴의 정의를 \(\varepsilon=1\)에 적용하면 어떤 자연수 \(N\)이 존재하여 \(n\ge N\)일 때
-
-\[
-|a_n-L|<1
-\]
-
-이다.
-따라서 삼각부등식에 의해
+Let \((a_n)\) be a real sequence converging to \(L\in\mathbb{R}\).
+Applying the definition of convergence with \(\varepsilon=1\), there exists a positive integer \(N\) such that, whenever \(n\ge N\),
 
 \[
-|a_n|\le |a_n-L|+|L|<1+|L|
+|a_n-L|<1.
 \]
-
-이다.
-한편 처음 \(N-1\)개의 항은 유한개이므로 그 절댓값에도 상계가 있다.
-\(N=1\)이면 이 상계를 \(M_0=0\)으로 두고, \(N>1\)이면
+Therefore, by the triangle inequality,
 
 \[
-M_0=\max\{|a_1|,\ldots,|a_{N-1}|\}
+|a_n|\le |a_n-L|+|L|<1+|L|.
 \]
-
-로 두자.
-이제
+The first \(N-1\) terms form a finite set, so their absolute values also have an upper bound.
+If \(N=1\), set \(M_0=0\); if \(N>1\), set
 
 \[
-M=\max\{M_0,1+|L|\}
+M_0=\max\{|a_1|,\ldots,|a_{N-1}|\}.
 \]
+Now let
 
-로 놓으면 모든 자연수 \(n\)에 대해 \(|a_n|\le M\)이다.
-따라서 수렴하는 모든 실수열은 유계이다.
+\[
+M=\max\{M_0,1+|L|\}.
+\]
+Then \(|a_n|\le M\) for every positive integer \(n\).
+Therefore every convergent real sequence is bounded.

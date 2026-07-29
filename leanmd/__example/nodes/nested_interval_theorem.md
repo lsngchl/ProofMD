@@ -1,26 +1,24 @@
-# 축소구간 정리
+# Nested Interval Theorem
 
-공집합이 아닌 닫힌구간의 열 \(I_k=[a_k,b_k]\)가
+Let \(I_k=[a_k,b_k]\) be a sequence of nonempty closed intervals satisfying
 
 \[
-I_1\supseteq I_2\supseteq I_3\supseteq\cdots
+I_1\supseteq I_2\supseteq I_3\supseteq\cdots.
 \]
+The set of left endpoints \(A=\{a_k:k\ge1\}\) is nonempty and bounded above by \(b_1\).
+By the completeness of \(\mathbb{R}\), \(x=\sup A\) exists.
 
-를 만족한다고 하자.
-왼쪽 끝점의 집합 \(A=\{a_k:k\ge1\}\)은 공집합이 아니며 \(b_1\)을 상계로 갖는다.
-실수의 완비성에 따라 \(x=\sup A\)가 존재한다.
-
-임의의 자연수 \(m\)을 고정하자.
-모든 \(k\)에 대해 \(a_k\le b_m\)이므로 \(b_m\)은 \(A\)의 상계이고, 따라서 \(x\le b_m\)이다.
-한편 \(a_m\in A\)이므로 \(a_m\le x\)이다.
-그러므로
+Fix any positive integer \(m\).
+Since \(a_k\le b_m\) for every \(k\), the number \(b_m\) is an upper bound for \(A\), and hence \(x\le b_m\).
+Since \(a_m\in A\), we also have \(a_m\le x\).
+Therefore
 
 \[
 a_m\le x\le b_m,
 \]
 
-즉 \(x\in I_m\)이다.
-\(m\)이 임의였으므로 \(x\)는 모든 \(I_m\)에 속하고, 따라서 이 축소구간열의 모든 구간은 공통점을 갖는다.
+so \(x\in I_m\).
+Because \(m\) was arbitrary, \(x\) belongs to every \(I_m\), and thus the intervals have a common point.
 
-더 나아가 구간의 길이 \(b_m-a_m\)이 \(0\)으로 수렴하면 그 공통점은 유일하다.
-실제로 \(x,y\)가 모든 \(I_m\)에 속한다면 \(|x-y|\le b_m-a_m\)이 모든 \(m\)에 대해 성립하므로 \(x=y\)이다.
+Moreover, if the interval lengths \(b_m-a_m\) converge to \(0\), then the common point is unique.
+Indeed, if \(x,y\) belong to every \(I_m\), then \(|x-y|\le b_m-a_m\) for every \(m\), so \(x=y\).
