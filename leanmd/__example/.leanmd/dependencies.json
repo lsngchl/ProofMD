@@ -5,55 +5,127 @@
   "edges": [
     {
       "from": "root.md",
-      "to": "nodes/boundedness_argument.md",
+      "to": "nodes/chain_rotational_curvature.md",
       "kind": "why",
       "order": 0
     },
     {
       "from": "root.md",
-      "to": "nodes/uniform_continuity_argument.md",
+      "to": "nodes/localized_two_set_configuration_theorem.md",
       "kind": "why",
       "order": 1
     },
     {
-      "from": "nodes/boundedness_argument.md",
-      "to": "nodes/bolzano_weierstrass_subsequence.md",
+      "from": "nodes/chain_rotational_curvature.md",
+      "to": "nodes/radial_and_tangential_hessian_eigenvalues.md",
       "kind": "why",
       "order": 0
     },
     {
-      "from": "nodes/boundedness_argument.md",
-      "to": "nodes/sequential_continuity.md",
-      "kind": "why",
-      "order": 1
-    },
-    {
-      "from": "nodes/boundedness_argument.md",
-      "to": "nodes/convergent_sequence_is_bounded.md",
+      "from": "nodes/chain_rotational_curvature.md",
+      "to": "nodes/omega_meets_product_support.md",
       "kind": "why",
       "order": 2
     },
     {
-      "from": "nodes/uniform_continuity_argument.md",
-      "to": "nodes/bolzano_weierstrass_subsequence.md",
+      "from": "nodes/chain_rotational_curvature.md",
+      "to": "nodes/straight_chain_nondegeneracy.md",
+      "kind": "why",
+      "order": 3
+    },
+    {
+      "from": "nodes/chain_rotational_curvature.md",
+      "to": "nodes/bent_chain_nondegeneracy.md",
+      "kind": "why",
+      "order": 4
+    },
+    {
+      "from": "nodes/localized_two_set_configuration_theorem.md",
+      "to": "nodes/conormal_canonical_relation.md",
       "kind": "why",
       "order": 0
     },
     {
-      "from": "nodes/uniform_continuity_argument.md",
-      "to": "nodes/nearby_sequences_share_limit.md",
+      "from": "nodes/localized_two_set_configuration_theorem.md",
+      "to": "nodes/inverse_function_theorem_for_smooth_manifolds.md",
       "kind": "why",
       "order": 1
     },
     {
-      "from": "nodes/uniform_continuity_argument.md",
-      "to": "nodes/sequential_continuity.md",
+      "from": "nodes/localized_two_set_configuration_theorem.md",
+      "to": "nodes/sobolev_smoothing_for_generalized_radon_transforms.md",
       "kind": "why",
       "order": 2
     },
     {
-      "from": "nodes/bolzano_weierstrass_subsequence.md",
-      "to": "nodes/nested_interval_theorem.md",
+      "from": "nodes/localized_two_set_configuration_theorem.md",
+      "to": "nodes/two_set_configuration_theorem.md",
+      "kind": "why",
+      "order": 3
+    },
+    {
+      "from": "nodes/bent_chain_nondegeneracy.md",
+      "to": "nodes/bent_chain_mixed_hessian_kernel.md",
+      "kind": "why",
+      "order": 0
+    },
+    {
+      "from": "nodes/sobolev_smoothing_for_generalized_radon_transforms.md",
+      "to": "nodes/coarea_formula.md",
+      "kind": "why",
+      "order": 0
+    },
+    {
+      "from": "nodes/sobolev_smoothing_for_generalized_radon_transforms.md",
+      "to": "nodes/schwartz_kernel.md",
+      "kind": "why",
+      "order": 1
+    },
+    {
+      "from": "nodes/sobolev_smoothing_for_generalized_radon_transforms.md",
+      "to": "nodes/pullback_of_dirac_fourier_representation.md",
+      "kind": "why",
+      "order": 2
+    },
+    {
+      "from": "nodes/sobolev_smoothing_for_generalized_radon_transforms.md",
+      "to": "nodes/fourier_integral_operator.md",
+      "kind": "why",
+      "order": 3
+    },
+    {
+      "from": "nodes/sobolev_smoothing_for_generalized_radon_transforms.md",
+      "to": "nodes/sobolev_mapping_for_fourier_integral_operators.md",
+      "kind": "why",
+      "order": 4
+    },
+    {
+      "from": "nodes/straight_chain_nondegeneracy.md",
+      "to": "nodes/tensor_product_inverse.md",
+      "kind": "why",
+      "order": 0
+    },
+    {
+      "from": "nodes/straight_chain_nondegeneracy.md",
+      "to": "nodes/gradients_at_repeated_points.md",
+      "kind": "why",
+      "order": 1
+    },
+    {
+      "from": "nodes/straight_chain_nondegeneracy.md",
+      "to": "nodes/radial_factor_for_power_hessian.md",
+      "kind": "why",
+      "order": 2
+    },
+    {
+      "from": "nodes/bent_chain_mixed_hessian_kernel.md",
+      "to": "nodes/mixed_hessian_factorization_on_chain_plane.md",
+      "kind": "why",
+      "order": 0
+    },
+    {
+      "from": "nodes/coarea_formula.md",
+      "to": "nodes/distributional_pullback.md",
       "kind": "why",
       "order": 0
     }
