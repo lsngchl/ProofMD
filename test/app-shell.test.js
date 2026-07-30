@@ -131,6 +131,38 @@ test("reloads the current Markdown file after external changes", () => {
   assert.match(appSource, /top: Math\.min\(previousScrollY, maximumScroll\)/);
 });
 
+test("polls WSL Markdown files when Windows change notifications are unavailable", () => {
+  assert.match(desktopHost, /WslMarkdownPollIntervalMilliseconds = 750/);
+  assert.match(
+    desktopHost,
+    /if \(IsWslMarkdownPath\(markdownPath\)\)\s*{\s*_wslMarkdownPollTimer\.Start\(\);\s*return;/,
+  );
+  assert.match(
+    desktopHost,
+    /OnWslMarkdownPollTimerTick[\s\S]*await ReloadCurrentMarkdownAsync\(\)/,
+  );
+  assert.equal(
+    desktopHost.includes(
+      String.raw`fullPath.StartsWith(
+                    @"\\wsl$\",
+                    StringComparison.OrdinalIgnoreCase)`,
+    ),
+    true,
+  );
+  assert.equal(
+    desktopHost.includes(
+      String.raw`fullPath.StartsWith(
+                    @"\\wsl.localhost\",
+                    StringComparison.OrdinalIgnoreCase)`,
+    ),
+    true,
+  );
+  assert.match(
+    desktopHost,
+    /DisposeMarkdownWatcher\(\)[\s\S]*_wslMarkdownPollTimer\.Stop\(\)/,
+  );
+});
+
 test("records live context only for structured LeanMD documents", () => {
   assert.match(desktopHost, /FindLeanMdMetadataDirectory\(markdownPath\)/);
   assert.match(desktopHost, /Path\.Combine\(metadataDirectory, "dependencies\.json"\)/);

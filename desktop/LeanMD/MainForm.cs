@@ -11,6 +11,7 @@ internal sealed class MainForm : Form
     private static MainForm? s_lastActivatedWindow;
     private const string ViewerHostName = "leanmd.local";
     private const int MarkdownReloadDebounceMilliseconds = 250;
+    private const int WslMarkdownPollIntervalMilliseconds = 750;
     private const int MarkdownReadRetryCount = 4;
     private const int MarkdownReadRetryDelayMilliseconds = 100;
     private const int LeanMdContextWriteDebounceMilliseconds = 100;
@@ -23,6 +24,7 @@ internal sealed class MainForm : Form
     private readonly bool _persistExplorationMap;
     private readonly WebView2 _webView;
     private readonly System.Windows.Forms.Timer _markdownReloadTimer;
+    private readonly System.Windows.Forms.Timer _wslMarkdownPollTimer;
     private readonly System.Windows.Forms.Timer _leanMdContextWriteTimer;
     private readonly System.Windows.Forms.Timer _leanMdStructureReloadTimer;
     private readonly System.Windows.Forms.Timer _unresolvedStateReloadTimer;
@@ -49,6 +51,7 @@ internal sealed class MainForm : Form
     private bool _formIsClosing;
     private bool _initialContentSent;
     private bool _windowRevealed;
+    private bool _wslMarkdownPollInProgress;
 
     private enum OpenReason
     {
@@ -102,6 +105,11 @@ internal sealed class MainForm : Form
             Interval = MarkdownReloadDebounceMilliseconds,
         };
         _markdownReloadTimer.Tick += OnMarkdownReloadTimerTick;
+        _wslMarkdownPollTimer = new System.Windows.Forms.Timer
+        {
+            Interval = WslMarkdownPollIntervalMilliseconds,
+        };
+        _wslMarkdownPollTimer.Tick += OnWslMarkdownPollTimerTick;
         _leanMdContextWriteTimer = new System.Windows.Forms.Timer
         {
             Interval = LeanMdContextWriteDebounceMilliseconds,
@@ -976,6 +984,12 @@ internal sealed class MainForm : Form
         string? directory = Path.GetDirectoryName(markdownPath);
         if (directory is null || !Directory.Exists(directory)) return;
 
+        if (IsWslMarkdownPath(markdownPath))
+        {
+            _wslMarkdownPollTimer.Start();
+            return;
+        }
+
         var watcher = new FileSystemWatcher(directory)
         {
             IncludeSubdirectories = false,
@@ -1049,6 +1063,21 @@ internal sealed class MainForm : Form
         await ReloadCurrentMarkdownAsync();
     }
 
+    private async void OnWslMarkdownPollTimerTick(object? sender, EventArgs eventArgs)
+    {
+        if (_formIsClosing || _wslMarkdownPollInProgress) return;
+
+        _wslMarkdownPollInProgress = true;
+        try
+        {
+            await ReloadCurrentMarkdownAsync();
+        }
+        finally
+        {
+            _wslMarkdownPollInProgress = false;
+        }
+    }
+
     private async Task ReloadCurrentMarkdownAsync()
     {
         string? markdownPath = _markdownPath;
@@ -1116,9 +1145,28 @@ internal sealed class MainForm : Form
         }
     }
 
+    private static bool IsWslMarkdownPath(string markdownPath)
+    {
+        try
+        {
+            string fullPath = Path.GetFullPath(markdownPath);
+            return fullPath.StartsWith(
+                    @"\\wsl$\",
+                    StringComparison.OrdinalIgnoreCase) ||
+                fullPath.StartsWith(
+                    @"\\wsl.localhost\",
+                    StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private void DisposeMarkdownWatcher()
     {
         _markdownReloadTimer.Stop();
+        _wslMarkdownPollTimer.Stop();
         _markdownWatcher?.Dispose();
         _markdownWatcher = null;
     }
@@ -1683,6 +1731,7 @@ internal sealed class MainForm : Form
         _formIsClosing = true;
         DisposeMarkdownWatcher();
         _markdownReloadTimer.Dispose();
+        _wslMarkdownPollTimer.Dispose();
         DisposeLeanMdStructureWatcher();
         _leanMdStructureReloadTimer.Dispose();
         DisposeUnresolvedStateWatcher();
