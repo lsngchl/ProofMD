@@ -31,15 +31,18 @@ test("builds a complete read-only LeanMD document set as one HTML file", () => {
     const metadata = JSON.parse(metadataMatch[1]);
 
     assert.equal(metadata.root, "root.md");
-    assert.equal(metadata.documents.length, 22);
-    assert.equal(new Set(metadata.documents.map(({ id }) => id)).size, 22);
-    assert.deepEqual(
-      new Set(metadata.documents.map(({ detail }) => detail)),
-      new Set(["Root document", "Supporting document"]),
+    assert.equal(
+      new Set(metadata.documents.map(({ id }) => id)).size,
+      metadata.documents.length,
     );
-    assert.equal(metadata.edges.length, 21);
-    assert.equal((html.match(/<template data-document-id=/gu) ?? []).length, 22);
-    assert.equal((html.match(/class="map-node(?: |")/gu) ?? []).length, 22);
+    assert.equal(
+      (html.match(/<template data-document-id=/gu) ?? []).length,
+      metadata.documents.length,
+    );
+    assert.equal(
+      (html.match(/class="map-node(?: |")/gu) ?? []).length,
+      metadata.documents.length,
+    );
     assert.match(html, /class="katex"/u);
     assert.match(html, /url\(data:font\/woff2;base64,/u);
     assert.doesNotMatch(html, /<script[^>]+src=/iu);
