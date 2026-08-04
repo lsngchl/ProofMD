@@ -1,45 +1,34 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace LeanMD;
 
 internal sealed record ExplorationMapState(
     string RootPath,
-    IReadOnlyList<string> Nodes,
-    IReadOnlyList<ExplorationMapEdge> Edges,
-    IReadOnlyList<string> VisitedNodes,
-    string? DependenciesFingerprint);
+    IReadOnlyList<string> VisitedNodes);
 
 internal static class ExplorationMapStore
 {
     internal const string StateFileName = "exploration-map.json";
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 3;
     private const int MaximumStateFileBytes = 4 * 1024 * 1024;
-    private const int MaximumNodeCount = 10_000;
-    private const int MaximumEdgeCount = 20_000;
+    private const int MaximumVisitedCount = 10_000;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = true,
     };
 
     private sealed class PersistedMapState
     {
         public int SchemaVersion { get; set; }
-        public string? DependenciesFingerprint { get; set; }
         public string? Root { get; set; }
         public List<string>? Nodes { get; set; }
-        public List<PersistedMapEdge>? Edges { get; set; }
         public List<string>? Visited { get; set; }
-        public DateTimeOffset UpdatedAt { get; set; }
-    }
-
-    private sealed class PersistedMapEdge
-    {
-        public string? From { get; set; }
-        public string? To { get; set; }
     }
 
     public static ExplorationMapState? Load(string metadataDirectory)
@@ -58,11 +47,7 @@ internal static class ExplorationMapStore
                 JsonOptions);
             if (persisted is null ||
                 persisted.SchemaVersion is < 1 or > CurrentSchemaVersion ||
-                string.IsNullOrWhiteSpace(persisted.Root) ||
-                persisted.Nodes is null ||
-                persisted.Edges is null ||
-                persisted.Nodes.Count is 0 or > MaximumNodeCount ||
-                persisted.Edges.Count > MaximumEdgeCount)
+                string.IsNullOrWhiteSpace(persisted.Root))
             {
                 return null;
             }
@@ -72,51 +57,42 @@ internal static class ExplorationMapStore
                 persisted.Root);
             if (rootPath is null) return null;
 
-            var nodes = ResolveUniquePaths(workspaceRoot, persisted.Nodes);
-            if (nodes is null ||
-                !nodes.Contains(rootPath, StringComparer.OrdinalIgnoreCase))
+            IReadOnlyList<string> visitedPaths;
+            if (persisted.SchemaVersion == 1)
             {
-                return null;
-            }
-            nodes.RemoveAll(path => LeanMdStructure.PathsEqual(path, rootPath));
-            nodes.Insert(0, rootPath);
-
-            var nodeSet = new HashSet<string>(nodes, StringComparer.OrdinalIgnoreCase);
-            var edges = new List<ExplorationMapEdge>();
-            var edgeSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (PersistedMapEdge persistedEdge in persisted.Edges)
-            {
-                string? from = LeanMdStructure.ResolveDocumentPath(
-                    workspaceRoot,
-                    persistedEdge.From);
-                string? to = LeanMdStructure.ResolveDocumentPath(
-                    workspaceRoot,
-                    persistedEdge.To);
-                if (from is null ||
-                    to is null ||
-                    LeanMdStructure.PathsEqual(from, to) ||
-                    !nodeSet.Contains(from) ||
-                    !nodeSet.Contains(to))
+                if (persisted.Nodes is null ||
+                    persisted.Nodes.Count is 0 or > MaximumVisitedCount)
                 {
-                    continue;
+                    return null;
                 }
 
-                string key = $"{from}\0{to}";
-                if (edgeSet.Add(key)) edges.Add(new ExplorationMapEdge(from, to));
+                List<string>? legacyNodes = ResolveUniquePaths(
+                    workspaceRoot,
+                    persisted.Nodes);
+                if (legacyNodes is null ||
+                    !legacyNodes.Contains(rootPath, StringComparer.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+                visitedPaths = legacyNodes;
             }
+            else
+            {
+                if (persisted.Visited?.Count > MaximumVisitedCount)
+                {
+                    return null;
+                }
 
-            List<string>? visited = persisted.SchemaVersion == 1
-                ? [.. nodes]
-                : ResolveUniquePaths(workspaceRoot, persisted.Visited ?? []);
-            if (visited is null) return null;
-            visited.RemoveAll(path => !nodeSet.Contains(path));
+                List<string>? visited = ResolveUniquePaths(
+                    workspaceRoot,
+                    persisted.Visited ?? []);
+                if (visited is null) return null;
+                visitedPaths = visited;
+            }
 
             return new ExplorationMapState(
                 rootPath,
-                nodes,
-                edges,
-                visited,
-                persisted.DependenciesFingerprint);
+                visitedPaths);
         }
         catch
         {
@@ -132,8 +108,7 @@ internal static class ExplorationMapStore
         {
             string? workspaceRoot = Directory.GetParent(metadataDirectory)?.FullName;
             if (workspaceRoot is null ||
-                state.Nodes.Count is 0 or > MaximumNodeCount ||
-                state.Edges.Count > MaximumEdgeCount)
+                state.VisitedNodes.Count > MaximumVisitedCount)
             {
                 return;
             }
@@ -143,41 +118,14 @@ internal static class ExplorationMapStore
                 state.RootPath);
             if (root is null) return;
 
-            List<string>? nodes = RelativeUniquePaths(workspaceRoot, state.Nodes);
             List<string>? visited = RelativeUniquePaths(workspaceRoot, state.VisitedNodes);
-            if (nodes is null || visited is null) return;
-            var nodeSet = new HashSet<string>(nodes, StringComparer.OrdinalIgnoreCase);
-            if (!nodeSet.Contains(root) || visited.Any(path => !nodeSet.Contains(path))) return;
-
-            var edges = new List<PersistedMapEdge>();
-            var edgeSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (ExplorationMapEdge edge in state.Edges)
-            {
-                string? from = LeanMdStructure.RelativeDocumentPath(workspaceRoot, edge.From);
-                string? to = LeanMdStructure.RelativeDocumentPath(workspaceRoot, edge.To);
-                if (from is null ||
-                    to is null ||
-                    from.Equals(to, StringComparison.OrdinalIgnoreCase) ||
-                    !nodeSet.Contains(from) ||
-                    !nodeSet.Contains(to))
-                {
-                    return;
-                }
-
-                string key = $"{from}\0{to}";
-                if (!edgeSet.Add(key)) continue;
-                edges.Add(new PersistedMapEdge { From = from, To = to });
-            }
+            if (visited is null) return;
 
             var persisted = new PersistedMapState
             {
                 SchemaVersion = CurrentSchemaVersion,
-                DependenciesFingerprint = state.DependenciesFingerprint,
                 Root = root,
-                Nodes = nodes,
-                Edges = edges,
                 Visited = visited,
-                UpdatedAt = DateTimeOffset.Now,
             };
 
             string json = JsonSerializer.Serialize(persisted, JsonOptions) + "\n";

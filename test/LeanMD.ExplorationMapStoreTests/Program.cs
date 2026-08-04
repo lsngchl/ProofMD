@@ -125,15 +125,7 @@ try
 
     var mapState = new ExplorationMapState(
         rootDocument,
-        [rootDocument, branchA, branchB, intermediate, deepTarget],
-        [
-            new ExplorationMapEdge(rootDocument, branchA),
-            new ExplorationMapEdge(rootDocument, branchB),
-            new ExplorationMapEdge(branchA, intermediate),
-            new ExplorationMapEdge(intermediate, deepTarget),
-        ],
-        [branchA, branchB, deepTarget],
-        structure.Fingerprint);
+        [branchA, branchB, deepTarget]);
     ExplorationMapStore.Save(metadata, mapState);
 
     string statePath = Path.Combine(metadata, ExplorationMapStore.StateFileName);
@@ -141,19 +133,18 @@ try
     string json = File.ReadAllText(statePath);
     Assert(!json.Contains(workspace, StringComparison.OrdinalIgnoreCase),
         "Persisted paths must be relative to the document set.");
-    Assert(json.Contains("\"schemaVersion\": 2", StringComparison.Ordinal),
-        "The current state schema should be version 2.");
+    Assert(json.Contains("\"schemaVersion\": 3", StringComparison.Ordinal) &&
+        !json.Contains("\"nodes\"", StringComparison.Ordinal) &&
+        !json.Contains("\"edges\"", StringComparison.Ordinal) &&
+        !json.Contains("dependenciesFingerprint", StringComparison.Ordinal),
+        "The current state schema should persist only root and visited paths.");
 
     ExplorationMapState? loaded = ExplorationMapStore.Load(metadata);
     Assert(loaded is not null, "The document set should restore the saved map.");
-    Assert(loaded!.Nodes.Count == 5 && loaded.Edges.Count == 4,
-        "The restored map should preserve the complete structural projection.");
-    Assert(loaded.VisitedNodes.Count == 3 &&
+    Assert(loaded!.VisitedNodes.Count == 3 &&
         loaded.VisitedNodes.Any(path => PathsEqual(path, branchB)) &&
         !loaded.VisitedNodes.Any(path => PathsEqual(path, intermediate)),
         "Visited and unexplored nodes must remain distinguishable after restore.");
-    Assert(loaded.DependenciesFingerprint == structure.Fingerprint,
-        "The manifest fingerprint should be persisted with the projection.");
 
     string relocatedWorkspace = Path.Combine(testRoot, "relocated-workspace");
     Directory.Move(workspace, relocatedWorkspace);
@@ -185,6 +176,22 @@ try
             PathsEqual(edge.To, Path.Combine(relocatedWorkspace, "b", "b.md"))),
         "An inserted dependency should appear immediately in the complete structure.");
 
+    File.WriteAllText(
+        statePath,
+        JsonSerializer.Serialize(new
+        {
+            schemaVersion = 2,
+            dependenciesFingerprint = "legacy",
+            root = "root.md",
+            nodes = new[] { "root.md", "a/a.md", "b/b.md" },
+            edges = Array.Empty<object>(),
+            visited = new[] { "a/a.md", "b/b.md" },
+            updatedAt = DateTimeOffset.Now,
+        }));
+    loaded = ExplorationMapStore.Load(relocatedMetadata);
+    Assert(loaded is not null && loaded.VisitedNodes.Count == 2,
+        "Schema 2 exploration state should remain readable after simplification.");
+
     File.WriteAllText(statePath = Path.Combine(
         relocatedMetadata,
         ExplorationMapStore.StateFileName), "{ invalid");
@@ -196,18 +203,17 @@ try
         statePath,
         JsonSerializer.Serialize(new
         {
-            schemaVersion = 2,
+            schemaVersion = 3,
             root = "../../outside.md",
-            nodes = new[] { "../../outside.md" },
-            edges = Array.Empty<object>(),
             visited = Array.Empty<string>(),
-            updatedAt = DateTimeOffset.Now,
         }));
     Assert(File.Exists(outsideDocument) &&
         ExplorationMapStore.Load(relocatedMetadata) is null,
         "Persisted paths must not escape the document set.");
 
-    Console.WriteLine("LeanMD structure, exploration-map, and unresolved-state tests passed.");
+    TestProofFoldStructure(testRoot);
+
+    Console.WriteLine("LeanMD and ProofFold desktop structure tests passed.");
 }
 finally
 {
@@ -269,6 +275,68 @@ static void WriteFlatDependencies(
             layout = "flat",
             root,
             edges = orderedEdges,
+        }, new JsonSerializerOptions { WriteIndented = true }));
+}
+
+static void TestProofFoldStructure(string testRoot)
+{
+    string root = Path.Combine(testRoot, "proof-fold");
+    string entry = WriteDocument(root, "main.md");
+    string instructions = WriteDocument(root, "AGENTS.md");
+    string firstFold = WriteDocument(root, "folds/first.md");
+    string nestedFold = WriteDocument(root, "folds/nested/second.md");
+    Directory.CreateDirectory(Path.Combine(root, "references"));
+    File.WriteAllText(Path.Combine(root, "notation.yaml"), "version: 1\nsymbols: []\n");
+    WriteProofFoldManifest(root, "folds");
+
+    ProofFoldStructure? structure = ProofFoldStructure.LoadForEntry(entry);
+    Assert(structure is not null,
+        "A valid adjacent prooffold.json should identify its configured entry.");
+    Assert(structure!.EntryId == "main.md" &&
+        structure.Folds.Count == 2 &&
+        structure.Folds.Any(fold => fold.Id == "folds/first.md") &&
+        structure.Folds.Any(fold => fold.Id == "folds/nested/second.md"),
+        "ProofFold should load every Markdown fragment under its folds directory.");
+    Assert(structure.TryResolveSourceDocument("folds/first.md", out string resolvedFold) &&
+        PathsEqual(resolvedFold, firstFold),
+        "ProofFold source ids should resolve to known entry or fold documents.");
+    Assert(ProofFoldStructure.LoadForEntry(instructions) is null &&
+        ProofFoldStructure.LoadForEntry(firstFold) is null,
+        "Only the configured entry beside prooffold.json should enter ProofFold mode.");
+    Assert(structure.AffectsRenderedDocument(nestedFold) &&
+        !structure.AffectsRenderedDocument(instructions),
+        "Only the manifest, entry, and folds should trigger a ProofFold rerender.");
+
+    File.AppendAllText(firstFold, "Changed\n");
+    ProofFoldStructure? changed = ProofFoldStructure.LoadForEntry(entry);
+    Assert(changed is not null && changed.Fingerprint != structure.Fingerprint,
+        "Changing a fold should change the ProofFold render fingerprint.");
+
+    WriteProofFoldManifest(root, "../outside");
+    bool rejectedEscape = false;
+    try
+    {
+        ProofFoldStructure.LoadForEntry(entry);
+    }
+    catch (InvalidDataException)
+    {
+        rejectedEscape = true;
+    }
+    Assert(rejectedEscape,
+        "ProofFold component paths must not escape the manifest directory.");
+}
+
+static void WriteProofFoldManifest(string root, string foldsDirectory)
+{
+    File.WriteAllText(
+        Path.Combine(root, "prooffold.json"),
+        JsonSerializer.Serialize(new
+        {
+            formatVersion = 1,
+            entry = "main.md",
+            foldsDirectory,
+            notationRegistry = "notation.yaml",
+            referencesDirectory = "references",
         }, new JsonSerializerOptions { WriteIndented = true }));
 }
 

@@ -34,15 +34,17 @@ internal sealed class MainForm : Form
     private readonly List<string> _mapVisitedNodes = [];
     private readonly Stack<DocumentHistoryEntry> _documentHistory = new();
     private string? _mapRootPath;
+    private MapFormat _mapFormat = MapFormat.Markdown;
     private string? _previousMapPath;
     private string? _mapMetadataDirectory;
-    private string? _mapDependenciesFingerprint;
     private int _mapSessionId;
     private Task<string>? _initialMarkdownReadTask;
     private FileSystemWatcher? _markdownWatcher;
+    private FileSystemWatcher? _proofFoldWatcher;
     private FileSystemWatcher? _leanMdStructureWatcher;
     private FileSystemWatcher? _unresolvedStateWatcher;
     private LeanMdStructure? _leanMdStructure;
+    private ProofFoldStructure? _proofFoldStructure;
     private string? _lastRenderedSource;
     private string? _leanMdMetadataDirectory;
     private string? _unresolvedStateFingerprint;
@@ -60,6 +62,13 @@ internal sealed class MainForm : Form
         Link,
         Map,
         History,
+    }
+
+    private enum MapFormat
+    {
+        Markdown,
+        LeanMd,
+        ProofFold,
     }
 
     private readonly record struct ViewerViewport(
@@ -278,9 +287,17 @@ internal sealed class MainForm : Form
                             parsedOrder >= 0
                                 ? parsedOrder
                                 : null;
+                        string? sourceDocument =
+                            message.RootElement.TryGetProperty(
+                                "sourceDocument",
+                                out JsonElement sourceDocumentElement) &&
+                            sourceDocumentElement.ValueKind == JsonValueKind.String
+                                ? sourceDocumentElement.GetString()
+                                : null;
                         await OpenLinkedMarkdownAsync(
                             hrefElement.GetString(),
                             role,
+                            sourceDocument,
                             position,
                             linkOrder);
                     }
@@ -404,11 +421,14 @@ internal sealed class MainForm : Form
                 ? await sourceTask
                 : await ReadMarkdownSourceAsync(markdownPath);
             markdownPath = Path.GetFullPath(markdownPath);
+            ProofFoldStructure? proofFoldStructure =
+                ProofFoldStructure.LoadForEntry(markdownPath);
             _markdownPath = markdownPath;
             _lastMarkdownDirectory = Path.GetDirectoryName(markdownPath);
             _initialMarkdownReadTask = null;
             _lastRenderedSource = source;
             ConfigureMarkdownWatcher(markdownPath);
+            ConfigureProofFoldStructure(proofFoldStructure);
             ConfigureLeanMdContext(markdownPath);
             UpdateHistoryAfterOpen(
                 reason,
@@ -431,6 +451,7 @@ internal sealed class MainForm : Form
                 contextId = _documentContextId,
                 unresolved = UnresolvedStateStore.IsUnresolved(markdownPath),
                 restorePosition = serializedRestorePosition,
+                proofFold = ProofFoldPayload(proofFoldStructure),
             });
             UpdateMapAfterOpen(markdownPath, reason, previousPath, linkSourcePath, linkOrder);
         }
@@ -452,12 +473,23 @@ internal sealed class MainForm : Form
     private async Task OpenLinkedMarkdownAsync(
         string? href,
         string? role,
+        string? sourceDocument,
         DocumentPosition? historyPosition,
         int? linkOrder)
     {
         if (_markdownPath is null || string.IsNullOrWhiteSpace(href)) return;
 
         string sourcePath = _markdownPath;
+        if (sourceDocument is not null)
+        {
+            if (_proofFoldStructure is null ||
+                !_proofFoldStructure.TryResolveSourceDocument(
+                    sourceDocument,
+                    out sourcePath))
+            {
+                return;
+            }
+        }
 
         try
         {
@@ -491,7 +523,7 @@ internal sealed class MainForm : Form
             await OpenMarkdownPathAsync(
                 linkedPath,
                 reason: OpenReason.Link,
-                linkSourcePath: sourcePath,
+                linkSourcePath: _markdownPath,
                 linkOrder: linkOrder,
                 historyPosition: historyPosition);
         }
@@ -558,6 +590,13 @@ internal sealed class MainForm : Form
         string? linkSourcePath,
         int? linkOrder)
     {
+        if (_proofFoldStructure is not null &&
+            PathsEqual(markdownPath, _proofFoldStructure.EntryPath))
+        {
+            UpdateProofFoldMap(_proofFoldStructure);
+            return;
+        }
+
         if (_leanMdStructure?.ContainsDocument(markdownPath) == true)
         {
             UpdateStructuredMapAfterOpen(markdownPath, previousPath);
@@ -603,12 +642,38 @@ internal sealed class MainForm : Form
         PublishMapState();
     }
 
+    private void UpdateProofFoldMap(ProofFoldStructure structure)
+    {
+        bool sameMap = _mapFormat == MapFormat.ProofFold &&
+            _mapRootPath is not null &&
+            PathsEqual(_mapRootPath, structure.EntryPath) &&
+            _mapNodes.SequenceEqual(
+                structure.Documents,
+                StringComparer.OrdinalIgnoreCase) &&
+            _mapEdges.SequenceEqual(structure.Edges);
+        if (!sameMap)
+        {
+            _mapSessionId++;
+        }
+
+        _mapFormat = MapFormat.ProofFold;
+        _mapRootPath = structure.EntryPath;
+        _mapMetadataDirectory = null;
+        _previousMapPath = null;
+        _mapNodes.Clear();
+        _mapNodes.AddRange(structure.Documents);
+        _mapEdges.Clear();
+        _mapEdges.AddRange(structure.Edges);
+        _mapVisitedNodes.Clear();
+        PublishMapState();
+    }
+
     private void RestoreStructuredMap(LeanMdStructure structure)
     {
         _mapSessionId++;
+        _mapFormat = MapFormat.LeanMd;
         _mapRootPath = structure.RootPath;
         _mapMetadataDirectory = structure.MetadataDirectory;
-        _mapDependenciesFingerprint = structure.Fingerprint;
         _previousMapPath = null;
         _documentHistory.Clear();
         _mapNodes.Clear();
@@ -621,7 +686,6 @@ internal sealed class MainForm : Form
         if (restored is not null && PathsEqual(restored.RootPath, structure.RootPath))
         {
             _mapVisitedNodes.AddRange(restored.VisitedNodes);
-            _mapDependenciesFingerprint = restored.DependenciesFingerprint;
         }
     }
 
@@ -638,6 +702,7 @@ internal sealed class MainForm : Form
         }
 
         _mapRootPath = structure.RootPath;
+        _mapFormat = MapFormat.LeanMd;
         _mapEdges.Clear();
         _mapEdges.AddRange(structure.Edges);
         _mapNodes.Clear();
@@ -648,7 +713,6 @@ internal sealed class MainForm : Form
         _mapVisitedNodes.AddRange(visited);
 
         _mapMetadataDirectory = structure.MetadataDirectory;
-        _mapDependenciesFingerprint = structure.Fingerprint;
     }
 
     private void MarkMapNodeVisited(string path)
@@ -661,13 +725,19 @@ internal sealed class MainForm : Form
 
     private void ResetMap(string currentPath)
     {
+        if (_proofFoldStructure is not null &&
+            PathsEqual(currentPath, _proofFoldStructure.EntryPath))
+        {
+            UpdateProofFoldMap(_proofFoldStructure);
+            return;
+        }
+
         if (_leanMdStructure?.ContainsDocument(currentPath) == true)
         {
             LeanMdStructure structure = _leanMdStructure;
             _mapSessionId++;
             _mapRootPath = structure.RootPath;
             _mapMetadataDirectory = structure.MetadataDirectory;
-            _mapDependenciesFingerprint = structure.Fingerprint;
             _previousMapPath = null;
             _documentHistory.Clear();
             _mapNodes.Clear();
@@ -686,9 +756,9 @@ internal sealed class MainForm : Form
     private void StartUnstructuredMap(string rootPath)
     {
         _mapSessionId++;
+        _mapFormat = MapFormat.Markdown;
         _mapRootPath = rootPath;
         _mapMetadataDirectory = null;
-        _mapDependenciesFingerprint = null;
         _previousMapPath = null;
         _documentHistory.Clear();
         _mapNodes.Clear();
@@ -707,9 +777,9 @@ internal sealed class MainForm : Form
         if (_mapRootPath is null || _mapNodes.Count == 0)
         {
             _mapSessionId++;
+            _mapFormat = MapFormat.Markdown;
             _mapRootPath = sourcePath;
             _mapMetadataDirectory = null;
-            _mapDependenciesFingerprint = null;
             _previousMapPath = null;
             _mapNodes.Clear();
             _mapEdges.Clear();
@@ -747,7 +817,7 @@ internal sealed class MainForm : Form
 
     private void UpdateUnstructuredLinkOrders(JsonElement message)
     {
-        if (_mapMetadataDirectory is not null ||
+        if (_mapFormat != MapFormat.Markdown ||
             _markdownPath is null ||
             !message.TryGetProperty("contextId", out JsonElement contextIdElement) ||
             !contextIdElement.TryGetInt32(out int contextId) ||
@@ -846,10 +916,7 @@ internal sealed class MainForm : Form
             _mapMetadataDirectory,
             new ExplorationMapState(
                 _mapRootPath,
-                _mapNodes.ToArray(),
-                _mapEdges.ToArray(),
-                _mapVisitedNodes.ToArray(),
-                _mapDependenciesFingerprint));
+                _mapVisitedNodes.ToArray()));
     }
 
     private void SetPreviousMapNode(string? previousPath, string currentPath)
@@ -863,12 +930,15 @@ internal sealed class MainForm : Form
 
     private void PublishMapState()
     {
-        string? rootDirectory = _mapMetadataDirectory is null
+        bool isLeanMdMap = _mapFormat == MapFormat.LeanMd;
+        bool isProofFoldMap = _mapFormat == MapFormat.ProofFold;
+        string? rootDirectory = isProofFoldMap
+            ? _proofFoldStructure?.RootDirectory
+            : _mapMetadataDirectory is null
             ? _mapRootPath is null
                 ? null
                 : Path.GetDirectoryName(_mapRootPath)
             : Directory.GetParent(_mapMetadataDirectory)?.FullName;
-        bool isStructuredMap = _mapMetadataDirectory is not null;
         var visited = new HashSet<string>(
             _mapVisitedNodes,
             StringComparer.OrdinalIgnoreCase);
@@ -876,6 +946,12 @@ internal sealed class MainForm : Form
         PostViewerMessage(new
         {
             type = "map-state",
+            format = _mapFormat switch
+            {
+                MapFormat.ProofFold => "prooffold",
+                MapFormat.LeanMd => "leanmd",
+                _ => "markdown",
+            },
             sessionId = _mapSessionId,
             root = _mapRootPath,
             current = _markdownPath,
@@ -883,27 +959,35 @@ internal sealed class MainForm : Form
             nodes = _mapNodes.Select((path, discoveryOrder) => new
             {
                 id = path,
-                label = isStructuredMap && !visited.Contains(path)
+                label = isLeanMdMap && !visited.Contains(path)
                     ? "?"
-                    : Path.GetFileNameWithoutExtension(path).Replace('_', ' '),
-                detail = isStructuredMap && !visited.Contains(path)
+                    : isProofFoldMap
+                        ? Path.GetFileNameWithoutExtension(path)
+                            .Replace('_', ' ')
+                            .Replace('-', ' ')
+                        : Path.GetFileNameWithoutExtension(path).Replace('_', ' '),
+                detail = isLeanMdMap && !visited.Contains(path)
                     ? "Unexplored structure node"
                     : path.Equals(_mapRootPath, StringComparison.OrdinalIgnoreCase)
-                    ? isStructuredMap ? "Structure root" : "Starting document"
+                    ? isProofFoldMap
+                        ? "ProofFold entry"
+                        : isLeanMdMap ? "Structure root" : "Starting document"
                     : rootDirectory is null
                         ? Path.GetFileName(path)
                         : Path.GetRelativePath(rootDirectory, path).Replace('\\', '/'),
-                unexplored = isStructuredMap && !visited.Contains(path),
-                unresolved = UnresolvedStateStore.IsUnresolved(path),
-                order = isStructuredMap && _leanMdStructure is not null
+                unexplored = isLeanMdMap && !visited.Contains(path),
+                unresolved = !isProofFoldMap && UnresolvedStateStore.IsUnresolved(path),
+                order = isLeanMdMap && _leanMdStructure is not null
                     ? _leanMdStructure.GetDocumentOrder(path)
+                    : isProofFoldMap && _proofFoldStructure is not null
+                        ? _proofFoldStructure.GetDocumentOrder(path)
                     : discoveryOrder,
             }),
             edges = _mapEdges.Select(edge => new
             {
                 from = edge.From,
                 to = edge.To,
-                order = isStructuredMap && _leanMdStructure is not null
+                order = isLeanMdMap && _leanMdStructure is not null
                     ? _leanMdStructure.GetEdgeOrder(edge.From, edge.To)
                     : edge.Order,
             }),
@@ -932,6 +1016,21 @@ internal sealed class MainForm : Form
     private void PostViewerMessage(object message)
     {
         _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message));
+    }
+
+    private static object? ProofFoldPayload(ProofFoldStructure? structure)
+    {
+        return structure is null
+            ? null
+            : new
+            {
+                entry = structure.EntryId,
+                folds = structure.Folds.Select(fold => new
+                {
+                    path = fold.Id,
+                    source = fold.Source,
+                }).ToArray(),
+            };
     }
 
     private void SetCurrentDocumentUnresolved(JsonElement message)
@@ -1008,23 +1107,81 @@ internal sealed class MainForm : Form
         _markdownWatcher = watcher;
     }
 
+    private void ConfigureProofFoldStructure(ProofFoldStructure? structure)
+    {
+        DisposeProofFoldWatcher();
+        _proofFoldStructure = structure;
+        if (structure is null ||
+            !Directory.Exists(structure.RootDirectory) ||
+            IsWslPath(structure.RootDirectory))
+        {
+            return;
+        }
+
+        var watcher = new FileSystemWatcher(structure.RootDirectory)
+        {
+            IncludeSubdirectories = true,
+            NotifyFilter = NotifyFilters.FileName |
+                NotifyFilters.DirectoryName |
+                NotifyFilters.LastWrite |
+                NotifyFilters.Size |
+                NotifyFilters.CreationTime,
+        };
+        watcher.Changed += OnProofFoldChanged;
+        watcher.Created += OnProofFoldChanged;
+        watcher.Deleted += OnProofFoldChanged;
+        watcher.Renamed += OnProofFoldChanged;
+        watcher.Error += OnProofFoldWatcherError;
+        watcher.EnableRaisingEvents = true;
+        _proofFoldWatcher = watcher;
+    }
+
+    private void OnProofFoldChanged(object sender, FileSystemEventArgs eventArgs)
+    {
+        ProofFoldStructure? structure = _proofFoldStructure;
+        if (structure is null) return;
+
+        bool affectsRenderedDocument = structure.AffectsRenderedDocument(eventArgs.FullPath);
+        if (eventArgs is RenamedEventArgs renamedEventArgs)
+        {
+            affectsRenderedDocument |= structure.AffectsRenderedDocument(
+                renamedEventArgs.OldFullPath);
+        }
+        if (affectsRenderedDocument) ScheduleMarkdownReload();
+    }
+
+    private void OnProofFoldWatcherError(object sender, ErrorEventArgs eventArgs)
+    {
+        ScheduleMarkdownReload();
+    }
+
     private void OnWatchedDirectoryChanged(object sender, FileSystemEventArgs eventArgs)
     {
         string? markdownPath = _markdownPath;
         if (markdownPath is null) return;
 
         bool affectsCurrentFile = PathsEqual(eventArgs.FullPath, markdownPath);
+        string? markdownDirectory = Path.GetDirectoryName(markdownPath);
+        string? proofFoldManifestPath = markdownDirectory is null
+            ? null
+            : Path.Combine(markdownDirectory, ProofFoldStructure.ManifestFileName);
+        bool affectsProofFoldManifest = PathsEqual(
+            eventArgs.FullPath,
+            proofFoldManifestPath);
         string unresolvedPath = UnresolvedStateStore.SidecarPath(markdownPath);
         bool affectsUnresolvedState = PathsEqual(eventArgs.FullPath, unresolvedPath);
         if (eventArgs is RenamedEventArgs renamedEventArgs)
         {
             affectsCurrentFile |= PathsEqual(renamedEventArgs.OldFullPath, markdownPath);
+            affectsProofFoldManifest |= PathsEqual(
+                renamedEventArgs.OldFullPath,
+                proofFoldManifestPath);
             affectsUnresolvedState |= PathsEqual(
                 renamedEventArgs.OldFullPath,
                 unresolvedPath);
         }
 
-        if (affectsCurrentFile)
+        if (affectsCurrentFile || affectsProofFoldManifest)
         {
             ScheduleMarkdownReload();
         }
@@ -1141,23 +1298,47 @@ internal sealed class MainForm : Form
                 }
 
                 string source = await ReadMarkdownSourceAsync(markdownPath);
-                if (!PathsEqual(_markdownPath, markdownPath) || source == _lastRenderedSource)
+                ProofFoldStructure? proofFoldStructure =
+                    ProofFoldStructure.LoadForEntry(markdownPath);
+                bool proofFoldUnchanged = string.Equals(
+                    proofFoldStructure?.Fingerprint,
+                    _proofFoldStructure?.Fingerprint,
+                    StringComparison.Ordinal);
+                if (!PathsEqual(_markdownPath, markdownPath) ||
+                    source == _lastRenderedSource && proofFoldUnchanged)
                 {
                     return;
                 }
 
                 _lastRenderedSource = source;
+                ConfigureProofFoldStructure(proofFoldStructure);
                 PostViewerMessage(new
                 {
                     type = "reload-markdown",
                     source,
                     name = Path.GetFileName(markdownPath),
                     contextId = _documentContextId,
+                    proofFold = ProofFoldPayload(proofFoldStructure),
                 });
+                if (proofFoldStructure is not null)
+                {
+                    UpdateProofFoldMap(proofFoldStructure);
+                }
+                else if (_mapFormat == MapFormat.ProofFold)
+                {
+                    if (_leanMdStructure?.ContainsDocument(markdownPath) == true)
+                    {
+                        UpdateStructuredMapAfterOpen(markdownPath, null);
+                    }
+                    else
+                    {
+                        StartUnstructuredMap(markdownPath);
+                    }
+                }
                 return;
             }
             catch (Exception exception) when (
-                exception is IOException or UnauthorizedAccessException)
+                exception is IOException or UnauthorizedAccessException or InvalidDataException)
             {
                 if (attempt == MarkdownReadRetryCount - 1) return;
                 await Task.Delay(MarkdownReadRetryDelayMilliseconds * (attempt + 1));
@@ -1219,10 +1400,26 @@ internal sealed class MainForm : Form
         _markdownWatcher = null;
     }
 
+    private void DisposeProofFoldWatcher()
+    {
+        if (_proofFoldWatcher is null) return;
+
+        _proofFoldWatcher.EnableRaisingEvents = false;
+        _proofFoldWatcher.Changed -= OnProofFoldChanged;
+        _proofFoldWatcher.Created -= OnProofFoldChanged;
+        _proofFoldWatcher.Deleted -= OnProofFoldChanged;
+        _proofFoldWatcher.Renamed -= OnProofFoldChanged;
+        _proofFoldWatcher.Error -= OnProofFoldWatcherError;
+        _proofFoldWatcher.Dispose();
+        _proofFoldWatcher = null;
+    }
+
     private void ConfigureLeanMdContext(string markdownPath)
     {
         string? previousMetadataDirectory = _leanMdMetadataDirectory;
-        string? nextMetadataDirectory = FindLeanMdMetadataDirectory(markdownPath);
+        string? nextMetadataDirectory = _proofFoldStructure is null
+            ? FindLeanMdMetadataDirectory(markdownPath)
+            : null;
         bool metadataDirectoryChanged =
             previousMetadataDirectory is null != nextMetadataDirectory is null ||
             previousMetadataDirectory is not null &&
@@ -1783,6 +1980,7 @@ internal sealed class MainForm : Form
     {
         _formIsClosing = true;
         DisposeMarkdownWatcher();
+        DisposeProofFoldWatcher();
         _markdownReloadTimer.Dispose();
         _wslFileStatePollTimer.Dispose();
         DisposeLeanMdStructureWatcher();

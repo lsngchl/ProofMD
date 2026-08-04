@@ -55,9 +55,6 @@ export function mathPlugin(md, options = {}) {
   }
 }
 
-// Preserve the old export name for code that imported the first version.
-export { mathPlugin as bracketMathPlugin };
-
 function inlineMathRule(state, silent) {
   let delimiter;
 

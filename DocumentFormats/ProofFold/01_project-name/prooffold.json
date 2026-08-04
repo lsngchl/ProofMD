@@ -1,0 +1,7 @@
+{
+  "formatVersion": 1,
+  "entry": "main.md",
+  "foldsDirectory": "folds",
+  "notationRegistry": "notation.yaml",
+  "referencesDirectory": "references"
+}

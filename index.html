@@ -11,11 +11,19 @@
   </head>
   <body>
     <header class="topbar">
-      <div class="brand" aria-label="LeanMD Viewer">
-        <span>LeanMD</span>
+      <div id="brand" class="brand" aria-label="LeanMD Viewer">
+        <span id="brandName">LeanMD</span>
       </div>
 
       <div class="topbar-actions">
+        <button
+          id="proofFoldCollapseButton"
+          class="quiet-button proof-fold-collapse-button"
+          type="button"
+          hidden
+        >
+          Collapse fold
+        </button>
         <button
           id="mapButton"
           class="quiet-button map-button"
@@ -160,7 +168,7 @@
       >
         <header class="map-header">
           <div>
-            <p class="map-eyebrow">Exploration map</p>
+            <p id="mapEyebrow" class="map-eyebrow">Exploration map</p>
             <h2 id="mapTitle">Structure you have revealed</h2>
           </div>
           <div class="map-actions">
@@ -208,7 +216,7 @@
             >
               Reset map
             </button>
-            <span>+N expands hidden branches · Overview shows the full structure</span>
+            <span id="mapHelpText">+N expands hidden branches · Overview shows the full structure</span>
           </div>
           <div class="map-zoom-controls" aria-label="Map zoom controls">
             <button
@@ -224,7 +232,7 @@
               id="mapZoomSlider"
               class="map-zoom-slider"
               type="range"
-              min="20"
+              min="5"
               max="200"
               step="5"
               value="100"

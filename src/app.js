@@ -6,8 +6,15 @@ import {
   routeExplorationMapEdges,
   unfoldExplorationMap,
 } from "./map-layout.js";
+import {
+  activeProofFoldIndex,
+  createProofFoldIndex,
+  resolveProofFoldTarget,
+} from "./proof-fold.js";
 
 const elements = {
+  brand: document.querySelector("#brand"),
+  brandName: document.querySelector("#brandName"),
   documentName: document.querySelector("#documentName"),
   dropOverlay: document.querySelector("#dropOverlay"),
   emptyState: document.querySelector("#emptyState"),
@@ -20,12 +27,15 @@ const elements = {
   mapCount: document.querySelector("#mapCount"),
   mapEdgeLayer: document.querySelector("#mapEdgeLayer"),
   mapEdges: document.querySelector("#mapEdges"),
+  mapEyebrow: document.querySelector("#mapEyebrow"),
+  mapHelpText: document.querySelector("#mapHelpText"),
   mapNodeLayer: document.querySelector("#mapNodeLayer"),
   mapOverlay: document.querySelector("#mapOverlay"),
   mapResetButton: document.querySelector("#mapResetButton"),
   mapResetConfirmButton: document.querySelector("#mapResetConfirmButton"),
   mapResetDialog: document.querySelector("#mapResetDialog"),
   mapSurface: document.querySelector("#mapSurface"),
+  mapTitle: document.querySelector("#mapTitle"),
   mapViewport: document.querySelector("#mapViewport"),
   mapZoomFitButton: document.querySelector("#mapZoomFitButton"),
   mapZoomInButton: document.querySelector("#mapZoomInButton"),
@@ -34,8 +44,10 @@ const elements = {
   mapZoomValue: document.querySelector("#mapZoomValue"),
   openButton: document.querySelector("#openButton"),
   preview: document.querySelector("#preview"),
+  proofFoldCollapseButton: document.querySelector("#proofFoldCollapseButton"),
   status: document.querySelector("#status"),
   themeButton: document.querySelector("#themeButton"),
+  topbar: document.querySelector(".topbar"),
   unresolvedButton: document.querySelector("#unresolvedButton"),
   viewerLoading: document.querySelector("#viewerLoading"),
 };
@@ -48,7 +60,12 @@ const MAP_NODE_GEOMETRY = Object.freeze({
   horizontalStep: 300,
   verticalStep: 104,
 });
-const MAP_MIN_ZOOM = 0.2;
+const PROOF_FOLD_MAP_GEOMETRY = Object.freeze({
+  ...MAP_NODE_GEOMETRY,
+  verticalStep: 180,
+  orientation: "vertical",
+});
+const MAP_MIN_ZOOM = 0.05;
 const MAP_MAX_ZOOM = 2;
 const MAP_ZOOM_STEP = 0.1;
 const MAP_OVERVIEW_ENTER_ZOOM = 0.4;
@@ -70,6 +87,10 @@ let currentDocumentContextId = null;
 let currentDocumentUnresolved = false;
 let unresolvedRequestPending = false;
 let viewerContextTimer = null;
+let currentProofFold = null;
+let expandedProofFoldPaths = new Set();
+let activeProofFoldForCollapse = null;
+let proofFoldCollapseAnimationFrame = null;
 let mapCamera = {
   sessionId: null,
   x: 0,
@@ -78,6 +99,7 @@ let mapCamera = {
   initialized: false,
 };
 let mapState = {
+  format: "markdown",
   sessionId: null,
   root: null,
   current: null,
@@ -114,32 +136,258 @@ function appendExternalLinkIndicator(link) {
   link.append(" ", icon, hint);
 }
 
-function renderDocument(
-  source,
-  name,
-  renderMarkdown,
-  { resetScroll = true } = {},
-) {
-  setEmptyStateVisible(false);
-  elements.preview.innerHTML = renderMarkdown(source);
-  elements.documentName.textContent = name;
+function isProofFoldLink(link) {
+  return link.getAttribute("title")?.trim().toLowerCase() === "fold";
+}
 
-  const links = [...elements.preview.querySelectorAll("a[href]")];
-  const markdownLinks = links.filter((link) =>
-    isRelativeMarkdownLink(link.getAttribute("href")),
+function isStandaloneParagraphLink(link) {
+  const paragraph = link.parentElement;
+  if (paragraph?.tagName !== "P") return false;
+
+  const meaningfulNodes = [...paragraph.childNodes].filter(
+    (node) => node.nodeType !== Node.TEXT_NODE || node.textContent.trim(),
   );
-  for (const [order, link] of markdownLinks.entries()) {
-    link.dataset.leanmdLinkOrder = String(order);
+  return meaningfulNodes.length === 1 && meaningfulNodes[0] === link;
+}
+
+function copySourceRange(source, target) {
+  const range = sourceRangeForElement(source);
+  if (!range) return;
+
+  target.dataset.sourceStartLine = String(range.startLine);
+  target.dataset.sourceEndLine = String(range.endLine);
+}
+
+function appendFoldMessage(content, message) {
+  const paragraph = document.createElement("p");
+  paragraph.className = "proof-fold-message";
+  paragraph.textContent = message;
+  content.append(paragraph);
+}
+
+function replaceProofFoldLink(
+  link,
+  sourceDocumentId,
+  renderMarkdown,
+  ancestry,
+) {
+  const href = link.getAttribute("href");
+  const targetId = resolveProofFoldTarget(sourceDocumentId, href);
+  const fragment = targetId ? currentProofFold.folds.get(targetId) : null;
+  const isCycle = targetId ? ancestry.includes(targetId) : false;
+  const isPending = /^fold\s*\(pending\)\s*:/iu.test(link.textContent.trim());
+  const label = link.textContent.trim() || "Fold";
+
+  const details = document.createElement("details");
+  details.className = "proof-fold";
+  if (targetId) details.dataset.proofFoldTarget = targetId;
+  if (isPending) details.classList.add("is-pending");
+  if (!targetId || !fragment || isCycle) details.classList.add("is-error");
+
+  const summary = document.createElement("summary");
+  summary.className = "proof-fold-summary";
+  summary.append(...[...link.childNodes].map((node) => node.cloneNode(true)));
+  details.append(summary);
+
+  const content = document.createElement("div");
+  content.className = "proof-fold-content";
+  content.setAttribute("role", "region");
+  content.setAttribute("aria-label", label);
+  details.append(content);
+
+  const replacementTarget = isStandaloneParagraphLink(link)
+    ? link.parentElement
+    : link;
+  copySourceRange(replacementTarget, details);
+  replacementTarget.replaceWith(details);
+
+  let loaded = false;
+  const loadContent = () => {
+    if (loaded) return;
+    loaded = true;
+
+    if (!targetId || !fragment) {
+      details.classList.add("is-error");
+      appendFoldMessage(content, "This fold target is missing or outside the ProofFold document.");
+      return;
+    }
+    if (isCycle) {
+      details.classList.add("is-error");
+      appendFoldMessage(content, "This fold would create a recursive expansion cycle.");
+      return;
+    }
+    if (isPending) {
+      appendFoldMessage(content, "This fold is pending.");
+      return;
+    }
+
+    content.innerHTML = renderMarkdown(fragment.source, { documentId: targetId });
+    enhanceRenderedContent(
+      content,
+      targetId,
+      renderMarkdown,
+      [...ancestry, targetId],
+    );
+  };
+
+  details.addEventListener("toggle", () => {
+    if (details.open) {
+      if (targetId) expandedProofFoldPaths.add(targetId);
+      loadContent();
+      announce(`${label} expanded.`);
+    } else {
+      if (targetId) expandedProofFoldPaths.delete(targetId);
+      announce(`${label} collapsed.`);
+    }
+    scheduleViewerContextReport();
+    scheduleProofFoldCollapseControl();
+  });
+
+  if (targetId && expandedProofFoldPaths.has(targetId)) {
+    details.open = true;
+    loadContent();
   }
+}
+
+function enhanceRenderedContent(
+  container,
+  sourceDocumentId,
+  renderMarkdown,
+  ancestry,
+) {
+  const links = [...container.querySelectorAll("a[href]")];
+  const markdownLinks = [];
 
   for (const link of links) {
     const href = link.getAttribute("href");
+    if (sourceDocumentId) {
+      link.dataset.proofFoldSource = sourceDocumentId;
+    }
+
+    if (currentProofFold && sourceDocumentId && isProofFoldLink(link)) {
+      replaceProofFoldLink(link, sourceDocumentId, renderMarkdown, ancestry);
+      continue;
+    }
+
+    if (isRelativeMarkdownLink(href)) {
+      markdownLinks.push(link);
+    }
     if (isExternalWebHref(href)) {
       link.target = "_blank";
       link.rel = "noreferrer noopener";
       link.classList.add("external-link");
       appendExternalLinkIndicator(link);
     }
+  }
+
+  return markdownLinks;
+}
+
+function configureProofFold(payload, preserveState) {
+  const nextProofFold = createProofFoldIndex(payload);
+  const sameEntry = currentProofFold &&
+    nextProofFold &&
+    currentProofFold.entry === nextProofFold.entry;
+  if (!preserveState || !sameEntry) {
+    expandedProofFoldPaths = new Set();
+  }
+  currentProofFold = nextProofFold;
+  activeProofFoldForCollapse = null;
+}
+
+function updateProofFoldCollapseControl() {
+  proofFoldCollapseAnimationFrame = null;
+  const button = elements.proofFoldCollapseButton;
+  if (!currentProofFold) {
+    activeProofFoldForCollapse = null;
+    button.hidden = true;
+    return;
+  }
+
+  const openFolds = [...elements.preview.querySelectorAll("details.proof-fold[open]")];
+  const topbarBottom = elements.topbar?.getBoundingClientRect().bottom ?? 0;
+  const readingLine = Math.min(
+    Math.max(topbarBottom + 36, window.innerHeight * 0.36),
+    Math.max(0, window.innerHeight - 36),
+  );
+  const activeIndex = activeProofFoldIndex(
+    openFolds.map((fold) => fold.getBoundingClientRect()),
+    readingLine,
+    window.innerHeight,
+  );
+  activeProofFoldForCollapse = activeIndex >= 0 ? openFolds[activeIndex] : null;
+  if (!activeProofFoldForCollapse) {
+    button.hidden = true;
+    return;
+  }
+
+  const summary = activeProofFoldForCollapse.querySelector(
+    ":scope > .proof-fold-summary",
+  );
+  const label = summary?.textContent.trim() || "current fold";
+  button.hidden = false;
+  button.title = `Collapse ${label}`;
+  button.setAttribute("aria-label", `Collapse ${label}`);
+}
+
+function scheduleProofFoldCollapseControl() {
+  if (proofFoldCollapseAnimationFrame !== null) return;
+  proofFoldCollapseAnimationFrame = window.requestAnimationFrame(
+    updateProofFoldCollapseControl,
+  );
+}
+
+function collapseActiveProofFold() {
+  const details = activeProofFoldForCollapse;
+  if (!details?.open) return;
+
+  const summary = details.querySelector(":scope > .proof-fold-summary");
+  activeProofFoldForCollapse = null;
+  elements.proofFoldCollapseButton.hidden = true;
+  details.open = false;
+  if (!(summary instanceof HTMLElement)) return;
+
+  summary.focus({ preventScroll: true });
+  window.requestAnimationFrame(() => {
+    summary.scrollIntoView({
+      block: "center",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+  });
+}
+
+function setProductBrand(name) {
+  elements.brandName.textContent = name;
+  elements.brand.setAttribute("aria-label", `${name} Viewer`);
+}
+
+function renderDocument(
+  source,
+  name,
+  renderMarkdown,
+  {
+    resetScroll = true,
+    proofFold = null,
+    preserveProofFoldState = false,
+  } = {},
+) {
+  configureProofFold(proofFold, preserveProofFoldState);
+  setProductBrand(currentProofFold ? "ProofFold" : "LeanMD");
+  setEmptyStateVisible(false);
+  const entryId = currentProofFold?.entry ?? null;
+  elements.preview.innerHTML = renderMarkdown(source, { documentId: entryId });
+  elements.documentName.textContent = name;
+
+  const markdownLinks = enhanceRenderedContent(
+    elements.preview,
+    entryId,
+    renderMarkdown,
+    entryId ? [entryId] : [],
+  );
+  for (const [order, link] of markdownLinks.entries()) {
+    link.dataset.leanmdLinkOrder = String(order);
   }
 
   if (webViewHost && Number.isInteger(currentDocumentContextId)) {
@@ -153,12 +401,13 @@ function renderDocument(
     });
   }
 
-  document.title = `${name} — LeanMD`;
+  document.title = `${name} — ${currentProofFold ? "ProofFold" : "LeanMD"}`;
   announce(`${name} rendered.`);
   if (resetScroll) {
     window.scrollTo({ top: 0, behavior: "auto" });
   }
   scheduleViewerContextReport();
+  scheduleProofFoldCollapseControl();
 }
 
 function sourceRangeForElement(element) {
@@ -398,6 +647,11 @@ function setMapState(nextState) {
   }
 
   mapState = {
+    format: nextState.format === "prooffold"
+      ? "prooffold"
+      : nextState.format === "leanmd"
+        ? "leanmd"
+        : "markdown",
     sessionId: nextState.sessionId,
     root: typeof nextState.root === "string" ? nextState.root : null,
     current: typeof nextState.current === "string" ? nextState.current : null,
@@ -407,9 +661,20 @@ function setMapState(nextState) {
   };
 
   const count = mapState.nodes.length;
+  const isProofFoldMap = mapState.format === "prooffold";
   elements.mapButton.disabled = count === 0;
   elements.mapCount.textContent = String(count);
   elements.mapResetButton.disabled = count === 0;
+  elements.mapResetButton.hidden = isProofFoldMap;
+  elements.mapEyebrow.textContent = isProofFoldMap
+    ? "ProofFold map"
+    : "Exploration map";
+  elements.mapTitle.textContent = isProofFoldMap
+    ? "Complete fold structure"
+    : "Structure you have revealed";
+  elements.mapHelpText.textContent = isProofFoldMap
+    ? "Every reachable fold is shown from the start"
+    : "+N expands hidden branches · Overview shows the full structure";
 
   if (count === 0 && !elements.mapOverlay.hidden) {
     closeMap();
@@ -418,11 +683,12 @@ function setMapState(nextState) {
   renderMap();
 
   if (!elements.mapOverlay.hidden && !mapCamera.initialized) {
-    window.requestAnimationFrame(centerCurrentMapNode);
+    window.requestAnimationFrame(initializeOpenMapCamera);
   }
 }
 
 function renderMap() {
+  const isProofFoldMap = mapState.format === "prooffold";
   const unfoldedMap = unfoldExplorationMap(
     mapState.nodes,
     mapState.edges,
@@ -441,16 +707,21 @@ function renderMap() {
   const overviewCurrentOccurrence = unfoldedMap.nodes.find(
     (node) => node.occurrenceKey === currentOccurrenceKey,
   );
-  const displayedMap = mapOverviewMode ? unfoldedMap : focusedMap;
+  const displayedMap = isProofFoldMap || mapOverviewMode
+    ? unfoldedMap
+    : focusedMap;
+  const mapGeometry = isProofFoldMap
+    ? PROOF_FOLD_MAP_GEOMETRY
+    : MAP_NODE_GEOMETRY;
   const layout = layoutExplorationMap(
     displayedMap.nodes,
     displayedMap.edges,
     displayedMap.root,
-    MAP_NODE_GEOMETRY,
+    mapGeometry,
   );
   renderedMapLayout = layout;
-  renderedMapGeometry = MAP_NODE_GEOMETRY;
-  renderedCurrentOccurrenceId = mapOverviewMode
+  renderedMapGeometry = mapGeometry;
+  renderedCurrentOccurrenceId = mapOverviewMode && !isProofFoldMap
     ? overviewCurrentOccurrence?.id ?? null
     : focusedMap.currentOccurrenceId;
   elements.mapNodeLayer.replaceChildren();
@@ -466,7 +737,7 @@ function renderMap() {
   const routes = routeExplorationMapEdges(
     displayedMap.edges,
     layout,
-    MAP_NODE_GEOMETRY,
+    mapGeometry,
   );
   for (const route of routes) {
     const path = document.createElementNS(SVG_NAMESPACE, "path");
@@ -691,6 +962,10 @@ function fitMapToViewport() {
   mapOverviewForced = true;
   mapOverviewMode = true;
   renderMap();
+  fitRenderedMapToViewport();
+}
+
+function fitRenderedMapToViewport() {
   if (!renderedMapLayout) return;
 
   const viewportWidth = elements.mapViewport.clientWidth;
@@ -706,6 +981,24 @@ function fitMapToViewport() {
   mapCamera.x = (viewportWidth - renderedMapLayout.width * mapCamera.zoom) / 2;
   mapCamera.y = (viewportHeight - renderedMapLayout.height * mapCamera.zoom) / 2;
   mapCamera.initialized = true;
+  constrainMapCamera();
+  applyMapCamera();
+}
+
+function initializeOpenMapCamera() {
+  if (mapState.format !== "prooffold") {
+    centerCurrentMapNode();
+    return;
+  }
+
+  if (!mapCamera.initialized) {
+    mapOverviewForced = false;
+    mapOverviewMode = false;
+    renderMap();
+    fitRenderedMapToViewport();
+    return;
+  }
+
   constrainMapCamera();
   applyMapCamera();
 }
@@ -755,7 +1048,7 @@ function openMap() {
   document.body.classList.add("map-is-open");
   renderMap();
 
-  window.requestAnimationFrame(centerCurrentMapNode);
+  window.requestAnimationFrame(initializeOpenMapCamera);
 }
 
 function closeMap() {
@@ -843,7 +1136,12 @@ async function openFile(file) {
 async function renderWithLoading(
   source,
   name,
-  { preserveScroll = false, showLoading = true, restorePosition = null } = {},
+  {
+    preserveScroll = false,
+    showLoading = true,
+    restorePosition = null,
+    proofFold = null,
+  } = {},
 ) {
   const generation = ++renderGeneration;
   const previousScrollY = preserveScroll ? window.scrollY : 0;
@@ -857,6 +1155,8 @@ async function renderWithLoading(
     if (generation !== renderGeneration) return;
     renderDocument(source, name, renderMarkdown, {
       resetScroll: !preserveScroll,
+      proofFold,
+      preserveProofFoldState: preserveScroll,
     });
   } catch (error) {
     if (generation !== renderGeneration) return;
@@ -892,6 +1192,15 @@ async function renderWithLoading(
 function showEmptyState() {
   ++renderGeneration;
   currentDocumentContextId = null;
+  currentProofFold = null;
+  expandedProofFoldPaths = new Set();
+  activeProofFoldForCollapse = null;
+  if (proofFoldCollapseAnimationFrame !== null) {
+    window.cancelAnimationFrame(proofFoldCollapseAnimationFrame);
+    proofFoldCollapseAnimationFrame = null;
+  }
+  elements.proofFoldCollapseButton.hidden = true;
+  setProductBrand("LeanMD");
   setDocumentUnresolvedState(false, false);
   window.clearTimeout(viewerContextTimer);
   viewerContextTimer = null;
@@ -991,6 +1300,11 @@ elements.openButton.addEventListener("click", (event) => {
   requestOpenFile();
 });
 
+elements.proofFoldCollapseButton.addEventListener(
+  "click",
+  collapseActiveProofFold,
+);
+
 elements.preview.addEventListener("click", (event) => {
   if (!webViewHost || event.defaultPrevented || event.button !== 0) return;
 
@@ -1008,6 +1322,7 @@ elements.preview.addEventListener("click", (event) => {
     type: "open-markdown-link",
     href,
     role,
+    sourceDocument: link.dataset.proofFoldSource ?? null,
     order: Number.isInteger(order) && order >= 0 ? order : null,
     position: currentDocumentPosition(),
   });
@@ -1143,6 +1458,8 @@ document.addEventListener("keydown", (event) => {
 
 window.addEventListener("scroll", scheduleViewerContextReport, { passive: true });
 window.addEventListener("resize", scheduleViewerContextReport);
+window.addEventListener("scroll", scheduleProofFoldCollapseControl, { passive: true });
+window.addEventListener("resize", scheduleProofFoldCollapseControl);
 document.addEventListener("selectionchange", scheduleViewerContextReport);
 
 for (const eventName of ["dragenter", "dragover"]) {
@@ -1183,6 +1500,7 @@ window.LeanMD = Object.freeze({
     contextId = null,
     unresolved = false,
     restorePosition = null,
+    proofFold = null,
   ) {
     if (typeof source !== "string") return;
     currentDocumentContextId = Number.isInteger(contextId) ? contextId : null;
@@ -1190,10 +1508,10 @@ window.LeanMD = Object.freeze({
     return renderWithLoading(
       source,
       typeof name === "string" ? name : "Untitled.md",
-      { restorePosition },
+      { restorePosition, proofFold },
     );
   },
-  reloadMarkdown(source, name = "Untitled.md", contextId = null) {
+  reloadMarkdown(source, name = "Untitled.md", contextId = null, proofFold = null) {
     if (typeof source !== "string") return;
     if (Number.isInteger(contextId)) {
       currentDocumentContextId = contextId;
@@ -1201,7 +1519,7 @@ window.LeanMD = Object.freeze({
     return renderWithLoading(
       source,
       typeof name === "string" ? name : "Untitled.md",
-      { preserveScroll: true, showLoading: false },
+      { preserveScroll: true, showLoading: false, proofFold },
     );
   },
   showEmptyState,
@@ -1220,12 +1538,14 @@ if (webViewHost) {
         message.contextId,
         message.unresolved,
         message.restorePosition,
+        message.proofFold,
       );
     } else if (message?.type === "reload-markdown") {
       await window.LeanMD.reloadMarkdown(
         message.source,
         message.name,
         message.contextId,
+        message.proofFold,
       );
     } else if (message?.type === "show-empty-state") {
       window.LeanMD.showEmptyState();

@@ -17,6 +17,15 @@ const markdown = new MarkdownIt({
   .use(footnotePlugin)
   .use(sourceMapPlugin);
 
-export function renderMarkdown(source) {
-  return markdown.render(source);
+function footnoteDocumentId(documentId) {
+  if (typeof documentId !== "string" || !documentId) return undefined;
+
+  return Array.from(documentId, (character) =>
+    character.codePointAt(0).toString(16),
+  ).join("-");
+}
+
+export function renderMarkdown(source, { documentId } = {}) {
+  const docId = footnoteDocumentId(documentId);
+  return markdown.render(source, docId ? { docId } : {});
 }

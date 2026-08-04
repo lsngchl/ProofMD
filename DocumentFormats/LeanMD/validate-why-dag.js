@@ -12,7 +12,7 @@ const documentSetArgument = process.argv
   .find((argument) => !argument.startsWith("--"));
 if (!documentSetArgument) {
   throw new Error(
-    "Usage: node leanmd/validate-why-dag.js <document-set-directory> [--write]",
+    "Usage: node DocumentFormats/LeanMD/validate-why-dag.js <document-set-directory> [--write]",
   );
 }
 

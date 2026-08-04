@@ -401,9 +401,6 @@ a:focus-visible {
 
 .document-name {
   margin: 0;
-}
-
-.document-name {
   overflow: hidden;
   font-size: 0.88rem;
   font-weight: 720;
@@ -529,6 +526,132 @@ a:focus-visible {
   color: var(--accent);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
+}
+
+.proof-fold {
+  --proof-fold-left-inset: 42px;
+  --proof-fold-right-inset: 18px;
+  --proof-fold-left-offset: -42px;
+  --proof-fold-right-offset: -18px;
+
+  margin: 1.15em var(--proof-fold-right-offset)
+    1.15em var(--proof-fold-left-offset);
+  overflow: clip;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--surface));
+}
+
+.proof-fold-summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 13px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.87rem;
+  font-weight: 750;
+  line-height: 1.4;
+  list-style: none;
+  user-select: none;
+}
+
+.proof-fold-summary::-webkit-details-marker {
+  display: none;
+}
+
+.proof-fold-summary::before {
+  content: "›";
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 1.2rem;
+  line-height: 1;
+  transition: transform 140ms ease;
+}
+
+.proof-fold[open] > .proof-fold-summary::before {
+  transform: rotate(90deg);
+}
+
+.proof-fold-summary:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.proof-fold-summary:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: -3px;
+}
+
+.proof-fold-content {
+  padding: 4px var(--proof-fold-right-inset) 16px var(--proof-fold-left-inset);
+  border-top: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.proof-fold-content > :first-child {
+  margin-top: 0.9em;
+}
+
+.proof-fold-content > :last-child {
+  margin-bottom: 0;
+}
+
+.proof-fold.is-pending {
+  border-style: dashed;
+}
+
+.proof-fold.is-pending > .proof-fold-summary::after,
+.proof-fold.is-error > .proof-fold-summary::after {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.proof-fold.is-pending > .proof-fold-summary::after {
+  content: "Pending";
+  color: var(--previous);
+  background: var(--previous-soft);
+}
+
+.proof-fold.is-error {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--line));
+}
+
+.proof-fold.is-error > .proof-fold-summary::after {
+  content: "Unavailable";
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.proof-fold-message {
+  color: var(--muted);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.86rem;
+  font-style: italic;
+}
+
+.proof-fold-collapse-button {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.proof-fold-collapse-button:hover {
+  background: color-mix(in srgb, var(--accent) 18%, var(--accent-soft));
+}
+
+.proof-fold-collapse-button[hidden] {
+  display: none;
 }
 
 .markdown-body .footnote-ref {
@@ -1313,6 +1436,13 @@ noscript {
     font-size: 2.05rem;
   }
 
+  .proof-fold {
+    --proof-fold-left-inset: 18px;
+    --proof-fold-right-inset: 18px;
+    --proof-fold-left-offset: -18px;
+    --proof-fold-right-offset: -18px;
+  }
+
   .map-overlay {
     padding: 0;
   }
@@ -1374,7 +1504,8 @@ noscript {
   .key-guide,
   .map-overlay,
   .empty-state,
-  .viewer-loading {
+  .viewer-loading,
+  .proof-fold-collapse-button {
     display: none !important;
   }
 

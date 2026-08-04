@@ -258,6 +258,7 @@ export function focusExplorationMap(
 
 export function layoutExplorationMap(nodes, edges, root, options = {}) {
   const settings = normalizedOptions(options);
+  const isVertical = settings.orientation === "vertical";
   const orderedNodes = [];
   const nodeById = new Map();
 
@@ -272,8 +273,6 @@ export function layoutExplorationMap(nodes, edges, root, options = {}) {
   if (orderedNodes.length === 0) {
     return {
       positions: new Map(),
-      primaryParents: new Map(),
-      subtreeRanges: new Map(),
       width: settings.minimumWidth,
       height: settings.minimumHeight,
     };
@@ -374,11 +373,16 @@ export function layoutExplorationMap(nodes, edges, root, options = {}) {
     placeSubtree(componentRoot.id);
   }
 
-  const contentHeight =
-    Math.max(0, nextLeafRow - 1) * settings.verticalStep + settings.nodeHeight;
-  const topOffset = Math.max(
-    settings.paddingY,
-    (settings.minimumHeight - contentHeight) / 2,
+  const leafStep = isVertical
+    ? settings.horizontalStep
+    : settings.verticalStep;
+  const leafSize = isVertical ? settings.nodeWidth : settings.nodeHeight;
+  const crossContentSize = Math.max(0, nextLeafRow - 1) * leafStep + leafSize;
+  const crossOffset = Math.max(
+    isVertical ? settings.paddingX : settings.paddingY,
+    ((isVertical ? settings.minimumWidth : settings.minimumHeight) -
+      crossContentSize) /
+      2,
   );
   const positions = new Map();
   let maximumDepth = 0;
@@ -389,32 +393,46 @@ export function layoutExplorationMap(nodes, edges, root, options = {}) {
     const centerRow = (range.first + range.last) / 2;
     maximumDepth = Math.max(maximumDepth, depth);
     positions.set(node.id, {
-      x: settings.paddingX + depth * settings.horizontalStep,
-      y: topOffset + centerRow * settings.verticalStep,
+      x: isVertical
+        ? crossOffset + centerRow * settings.horizontalStep
+        : settings.paddingX + depth * settings.horizontalStep,
+      y: isVertical
+        ? settings.paddingY + depth * settings.verticalStep
+        : crossOffset + centerRow * settings.verticalStep,
       depth,
     });
   }
 
   return {
     positions,
-    primaryParents,
-    subtreeRanges,
-    width: Math.max(
-      settings.minimumWidth,
-      settings.paddingX * 2 + maximumDepth * settings.horizontalStep + settings.nodeWidth,
-    ),
-    height: Math.max(settings.minimumHeight, contentHeight + settings.paddingY * 2),
+    width: isVertical
+      ? Math.max(settings.minimumWidth, crossContentSize + settings.paddingX * 2)
+      : Math.max(
+          settings.minimumWidth,
+          settings.paddingX * 2 +
+            maximumDepth * settings.horizontalStep +
+            settings.nodeWidth,
+        ),
+    height: isVertical
+      ? Math.max(
+          settings.minimumHeight,
+          settings.paddingY * 2 +
+            maximumDepth * settings.verticalStep +
+            settings.nodeHeight,
+        )
+      : Math.max(settings.minimumHeight, crossContentSize + settings.paddingY * 2),
   };
 }
 
-function distributedOffset(index, count, nodeHeight) {
+function distributedOffset(index, count, nodeSize) {
   if (count <= 1) return 0;
-  const span = Math.min(nodeHeight - 24, (count - 1) * 12);
+  const span = Math.min(nodeSize - 24, (count - 1) * 12);
   return -span / 2 + (span * index) / (count - 1);
 }
 
 export function routeExplorationMapEdges(edges, layout, options = {}) {
   const settings = normalizedOptions(options);
+  const isVertical = settings.orientation === "vertical";
   const validEdges = edges.filter(
     (edge) => layout.positions.has(edge?.from) && layout.positions.has(edge?.to),
   );
@@ -432,14 +450,18 @@ export function routeExplorationMapEdges(edges, layout, options = {}) {
     sourceEdges.sort((a, b) => {
       const aPosition = layout.positions.get(a.to);
       const bPosition = layout.positions.get(b.to);
-      return aPosition.y - bPosition.y || aPosition.x - bPosition.x;
+      return isVertical
+        ? aPosition.x - bPosition.x || aPosition.y - bPosition.y
+        : aPosition.y - bPosition.y || aPosition.x - bPosition.x;
     });
   }
   for (const targetEdges of incoming.values()) {
     targetEdges.sort((a, b) => {
       const aPosition = layout.positions.get(a.from);
       const bPosition = layout.positions.get(b.from);
-      return aPosition.y - bPosition.y || aPosition.x - bPosition.x;
+      return isVertical
+        ? aPosition.x - bPosition.x || aPosition.y - bPosition.y
+        : aPosition.y - bPosition.y || aPosition.x - bPosition.x;
     });
   }
 
@@ -448,6 +470,40 @@ export function routeExplorationMapEdges(edges, layout, options = {}) {
     const target = layout.positions.get(edge.to);
     const sourceEdges = outgoing.get(edge.from);
     const targetEdges = incoming.get(edge.to);
+    if (isVertical) {
+      const sourceX =
+        source.x +
+        settings.nodeWidth / 2 +
+        distributedOffset(
+          sourceEdges.indexOf(edge),
+          sourceEdges.length,
+          settings.nodeWidth,
+        );
+      const targetX =
+        target.x +
+        settings.nodeWidth / 2 +
+        distributedOffset(
+          targetEdges.indexOf(edge),
+          targetEdges.length,
+          settings.nodeWidth,
+        );
+      const isForward = target.y > source.y;
+      const sourceY = isForward ? source.y + settings.nodeHeight : source.y;
+      const targetY = isForward ? target.y : target.y + settings.nodeHeight;
+      const curve = Math.max(36, Math.abs(targetY - sourceY) * 0.45);
+      const firstControlY = isForward ? sourceY + curve : sourceY - curve;
+      const secondControlY = isForward ? targetY - curve : targetY + curve;
+
+      return {
+        edge,
+        sourceX,
+        targetX,
+        sourceY,
+        targetY,
+        path: `M ${sourceX} ${sourceY} C ${sourceX} ${firstControlY}, ${targetX} ${secondControlY}, ${targetX} ${targetY}`,
+      };
+    }
+
     const sourceY =
       source.y +
       settings.nodeHeight / 2 +

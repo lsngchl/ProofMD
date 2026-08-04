@@ -1,6 +1,6 @@
 # LeanMD Viewer
 
-**Latest release: 1.4.5**
+**Latest release: 1.5.0**
 
 A small, local-first Markdown viewer that renders LaTeX written with either
 `\(...\)` and `\[...\]` or `$...$` and `$$...$$`.
@@ -9,7 +9,7 @@ A small, local-first Markdown viewer that renders LaTeX written with either
 
 - Viewer source: `index.html` and `src/`
 - Windows desktop wrapper and installer scripts: `desktop/LeanMD/`
-- LeanMD document workspace: `leanmd/`
+- Document formats: `DocumentFormats/LeanMD/` and `DocumentFormats/ProofFold/`
 - Application asset scripts: `scripts/`
 - Automated tests: `test/`
 
@@ -26,6 +26,7 @@ installer display version are kept in sync with the latest release shown above.
 - KaTeX rendering with no remote font or script requests
 - File picker, drag and drop, light/dark theme, and print styles
 - In-app navigation for relative Markdown links and a structure-aware exploration map
+- In-place, recursively nested ProofFold disclosures from an adjacent `prooffold.json`
 - Undiscovered links inside the current LeanMD structure reuse the current viewer window
 - Recursive map layout that keeps sibling subtrees ordered as branches grow
 - Map branches ordered by their source links rather than discovery order
@@ -98,12 +99,22 @@ directly under `nodes/`, so logical proof depth does not increase filesystem
 path depth. Node filenames are unique lowercase ASCII slugs, while the first
 level-one heading supplies the displayed title.
 
+For ProofFold documents, the app checks only for `prooffold.json` beside the
+Markdown file being opened. ProofFold mode is enabled when the manifest's
+`entry` resolves to that file. Links with the `"fold"` title then expand their
+configured `folds/` targets in place, including nested folds, instead of
+navigating away from the entry document. Opening a fold or reference file
+directly continues to use ordinary Markdown mode. In ProofFold mode, the app
+brand changes to ProofFold and the map shows every reachable fold immediately
+as a top-down tree rooted at the entry document; it does not use exploration
+state.
+
 Validate a document set, or regenerate its complete manifest after editing why
 links, by passing its path:
 
 ```sh
-node leanmd/validate-why-dag.js path/to/document_set
-node leanmd/validate-why-dag.js path/to/document_set --write
+node DocumentFormats/LeanMD/validate-why-dag.js path/to/document_set
+node DocumentFormats/LeanMD/validate-why-dag.js path/to/document_set --write
 ```
 
 Run the app feature test suite with:

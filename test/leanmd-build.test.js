@@ -18,7 +18,7 @@ test("builds a complete read-only LeanMD document set as one HTML file", () => {
   try {
     const result = spawnSync(
       process.execPath,
-      ["leanmd-build/build.js", "leanmd/__example", outputPath],
+      ["leanmd-build/build.js", "DocumentFormats/LeanMD/__example", outputPath],
       { cwd: repositoryRoot, encoding: "utf8" },
     );
     assert.equal(result.status, 0, result.stderr || result.stdout);

@@ -7,7 +7,7 @@ The output does not read the source document set at run time.
 Run the builder from the repository root:
 
 ```sh
-npm run build:leanmd -- leanmd/__example leanmd-build/__example.html
+npm run build:leanmd -- DocumentFormats/LeanMD/__example leanmd-build/__example.html
 ```
 
 The generated viewer is read-only.
