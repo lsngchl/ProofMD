@@ -3,6 +3,7 @@ import "katex/dist/katex.min.css";
 import {
   focusExplorationMap,
   layoutExplorationMap,
+  PROOF_FOLD_MAP_GEOMETRY,
   routeExplorationMapEdges,
   unfoldExplorationMap,
 } from "./map-layout.js";
@@ -60,11 +61,6 @@ const MAP_NODE_GEOMETRY = Object.freeze({
   nodeHeight: 72,
   horizontalStep: 300,
   verticalStep: 104,
-});
-const PROOF_FOLD_MAP_GEOMETRY = Object.freeze({
-  ...MAP_NODE_GEOMETRY,
-  verticalStep: 180,
-  orientation: "vertical",
 });
 const MAP_MIN_ZOOM = 0.05;
 const MAP_MAX_ZOOM = 2;
@@ -685,7 +681,7 @@ function setMapState(nextState) {
     ? "Complete fold structure"
     : "Structure you have revealed";
   elements.mapHelpText.textContent = isProofFoldMap
-    ? "Every reachable fold is shown from the start"
+    ? "Icon nodes show every reachable fold · Hover for names"
     : "+N expands hidden branches · Overview shows the full structure";
 
   if (count === 0 && !elements.mapOverlay.hidden) {
@@ -739,6 +735,7 @@ function renderMap() {
   elements.mapNodeLayer.replaceChildren();
   elements.mapEdgeLayer.replaceChildren();
   elements.mapSurface.classList.toggle("is-overview", mapOverviewMode);
+  elements.mapSurface.classList.toggle("is-proof-fold", isProofFoldMap);
 
   elements.mapSurface.style.width = `${layout.width}px`;
   elements.mapSurface.style.height = `${layout.height}px`;
@@ -754,7 +751,9 @@ function renderMap() {
   for (const route of routes) {
     const path = document.createElementNS(SVG_NAMESPACE, "path");
     path.setAttribute("d", route.path);
-    path.setAttribute("marker-end", "url(#mapArrow)");
+    if (!isProofFoldMap) {
+      path.setAttribute("marker-end", "url(#mapArrow)");
+    }
     elements.mapEdgeLayer.append(path);
   }
 
@@ -791,6 +790,7 @@ function renderMap() {
       ? `${stateDescriptions.join(" ")} `
       : "";
     button.title = [
+      isProofFoldMap ? node.label : null,
       isUnresolved ? "Unresolved" : null,
       isPrevious ? "Previous" : null,
       node.detail,
@@ -839,6 +839,8 @@ function renderMap() {
     shell.className = "map-node-shell";
     shell.classList.toggle("is-current", isCurrent);
     shell.dataset.occurrenceKey = node.occurrenceKey;
+    shell.style.width = `${mapGeometry.nodeWidth}px`;
+    shell.style.height = `${mapGeometry.nodeHeight}px`;
     shell.style.transform = `translate(${position.x}px, ${position.y}px)`;
     shell.append(button);
 

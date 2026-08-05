@@ -1,6 +1,6 @@
 # LeanMD Viewer
 
-**Latest release: 1.5.0**
+**Latest release: 1.5.1**
 
 A small, local-first Markdown viewer that renders LaTeX written with either
 `\(...\)` and `\[...\]` or `$...$` and `$$...$$`.

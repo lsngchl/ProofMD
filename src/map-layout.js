@@ -9,6 +9,19 @@ const DEFAULT_LAYOUT = Object.freeze({
   minimumHeight: 620,
 });
 
+export const PROOF_FOLD_MAP_GEOMETRY = Object.freeze({
+  nodeWidth: 56,
+  nodeHeight: 56,
+  horizontalStep: 84,
+  verticalStep: 132,
+  paddingX: 48,
+  paddingY: 44,
+  minimumWidth: 640,
+  minimumHeight: 620,
+  orientation: "vertical",
+  edgeStyle: "branch",
+});
+
 const DEFAULT_MAXIMUM_UNFOLDED_NODES = 50_000;
 
 function normalizedOptions(options) {
@@ -471,6 +484,24 @@ export function routeExplorationMapEdges(edges, layout, options = {}) {
     const sourceEdges = outgoing.get(edge.from);
     const targetEdges = incoming.get(edge.to);
     if (isVertical) {
+      if (settings.edgeStyle === "branch") {
+        const sourceX = source.x + settings.nodeWidth / 2;
+        const targetX = target.x + settings.nodeWidth / 2;
+        const isForward = target.y > source.y;
+        const sourceY = isForward ? source.y + settings.nodeHeight : source.y;
+        const targetY = isForward ? target.y : target.y + settings.nodeHeight;
+        const branchY = (sourceY + targetY) / 2;
+
+        return {
+          edge,
+          sourceX,
+          targetX,
+          sourceY,
+          targetY,
+          path: `M ${sourceX} ${sourceY} V ${branchY} H ${targetX} V ${targetY}`,
+        };
+      }
+
       const sourceX =
         source.x +
         settings.nodeWidth / 2 +

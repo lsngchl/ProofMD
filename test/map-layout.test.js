@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   focusExplorationMap,
   layoutExplorationMap,
+  PROOF_FOLD_MAP_GEOMETRY,
   routeExplorationMapEdges,
   unfoldExplorationMap,
 } from "../src/map-layout.js";
@@ -223,4 +224,59 @@ test("assigns ordered, separate ports to child arrows", () => {
     routes.map((route) => route.targetY),
     [...routes.map((route) => route.targetY)].sort((a, b) => a - b),
   );
+});
+
+test("keeps the ProofFold tree compact across and spacious down the page", () => {
+  const nodes = [
+    node("root", 0),
+    node("left", 1),
+    node("middle", 2),
+    node("right", 3),
+    ...[1, 2, 3, 4].map((index) => node(`deep-${index}`, 3 + index)),
+  ];
+  const edges = [
+    edge("root", "left", 0),
+    edge("root", "middle", 1),
+    edge("root", "right", 2),
+    edge("middle", "deep-1"),
+    edge("deep-1", "deep-2"),
+    edge("deep-2", "deep-3"),
+    edge("deep-3", "deep-4"),
+  ];
+  const layout = layoutExplorationMap(
+    nodes,
+    edges,
+    "root",
+    PROOF_FOLD_MAP_GEOMETRY,
+  );
+
+  assert.equal(
+    layout.positions.get("middle").x - layout.positions.get("left").x,
+    PROOF_FOLD_MAP_GEOMETRY.horizontalStep,
+  );
+  assert.equal(
+    layout.positions.get("deep-4").y - layout.positions.get("deep-3").y,
+    PROOF_FOLD_MAP_GEOMETRY.verticalStep,
+  );
+  assert.ok(layout.height > layout.width);
+});
+
+test("routes ProofFold edges as shared tree branches without arrow geometry", () => {
+  const nodes = [node("root", 0), node("left", 1), node("right", 2)];
+  const edges = [edge("root", "left", 0), edge("root", "right", 1)];
+  const layout = layoutExplorationMap(
+    nodes,
+    edges,
+    "root",
+    PROOF_FOLD_MAP_GEOMETRY,
+  );
+  const routes = routeExplorationMapEdges(
+    edges,
+    layout,
+    PROOF_FOLD_MAP_GEOMETRY,
+  );
+
+  assert.equal(new Set(routes.map((route) => route.sourceX)).size, 1);
+  assert.ok(routes.every((route) => /^M .* V .* H .* V .*$/u.test(route.path)));
+  assert.ok(routes.every((route) => !route.path.includes(" C ")));
 });

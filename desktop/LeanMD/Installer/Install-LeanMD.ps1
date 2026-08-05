@@ -64,7 +64,7 @@ $registeredApplications.Close()
 
 $uninstall = $currentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\Uninstall\LeanMD')
 $uninstall.SetValue('DisplayName', $appName)
-$uninstall.SetValue('DisplayVersion', '1.5.0')
+$uninstall.SetValue('DisplayVersion', '1.5.1')
 $uninstall.SetValue('Publisher', 'LeanMD')
 $uninstall.SetValue('InstallLocation', $installDirectory)
 $uninstall.SetValue('DisplayIcon', $executablePath)
