@@ -1,7 +1,22 @@
 version: 1
 
 symbols: []
+# Each persistent symbol uses the following fields:
+# - symbol: "B"
+#   name: "descriptive name"
+#   meaning: "Persistent document-wide meaning of the symbol."
+#   introduced_at: "main.md"
 
 conventions:
   reserved_symbols: []
+  # Each reserved symbol uses the following fields:
+  # - symbol: "R"
+  #   role: "document-wide semantic role"
+  #   kind: "scale, index, operator, or another useful category"
+  #   domain: "domain or range of allowed values"
+  #   introduced_at: "main.md"
+
   naming_rules: []
+  # Each naming rule uses the following fields:
+  # - id: "descriptive-lowercase-hyphenated-id"
+  #   rule: "Document-wide naming rule."
