@@ -3,6 +3,7 @@ import test from "node:test";
 import katex from "katex";
 import MarkdownIt from "markdown-it";
 import footnotePlugin from "markdown-it-footnote";
+import { calculateMathTagOffset } from "../src/math-layout.js";
 import { mathPlugin } from "../src/math-plugin.js";
 import { sourceMapPlugin } from "../src/source-map-plugin.js";
 
@@ -56,6 +57,26 @@ test("renders same-line double-dollar display mathematics", () => {
 
   assert.match(html, /class="math-display"/);
   assert.match(html, /class="katex-display"/);
+});
+
+test("moves an equation tag below a formula when their bounds conflict", () => {
+  const layout = calculateMathTagOffset(
+    [{ top: 10, right: 90, bottom: 30, left: 10 }],
+    { top: 15, right: 100, bottom: 25, left: 80 },
+    { top: 10, right: 100, bottom: 40, left: 0 },
+  );
+
+  assert.deepEqual(layout, { shift: 19, extraSpace: 4 });
+});
+
+test("keeps an equation tag beside a formula when enough room remains", () => {
+  const layout = calculateMathTagOffset(
+    [{ top: 10, right: 70, bottom: 30, left: 10 }],
+    { top: 15, right: 100, bottom: 25, left: 80 },
+    { top: 10, right: 100, bottom: 40, left: 0 },
+  );
+
+  assert.equal(layout, null);
 });
 
 test("renders bracket and dollar inline mathematics in the same paragraph", () => {

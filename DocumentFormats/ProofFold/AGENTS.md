@@ -148,6 +148,10 @@ audit must record:
 - any additional rescaling, normalization, compactness, or continuity bridge;
 - a direct verdict stating whether the imported form is justified.
 
+A reference audit is not part of the canonical proof.  It may verify an
+imported result and its hypotheses, but every project-local argument needed
+to obtain the next claim must appear in `main.md` or `folds/**/*.md`.
+
 Treat secondary notes and downloaded derivations as leads, not as authority.
 Check specialized claims against the primary source.  In particular,
 distinguish identities valid only on the incidence set from identities needed
@@ -169,6 +173,7 @@ Before declaring the proof complete, verify all of the following:
   depth, segment, filename, repository-relative-path, and absolute-path limits
   stated above;
 - every imported specialized result has a linked source audit;
+- no proof step needed in the expanded argument is supplied only by a source audit;
 - all relative links and all paths in `prooffold.json` resolve;
 - `notation.yaml` parses, has no duplicate symbol, and every `introduced_at`
   path exists;

@@ -801,6 +801,14 @@ a:focus-visible {
   margin-block: 0;
 }
 
+.math-display .katex-display.math-tag-below > .katex > .katex-html {
+  padding-bottom: var(--math-tag-extra-space);
+}
+
+.math-display .katex-display.math-tag-below > .katex > .katex-html > .tag {
+  transform: translateY(var(--math-tag-shift));
+}
+
 .math-error {
   color: #b13f38;
 }

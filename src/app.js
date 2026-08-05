@@ -6,6 +6,7 @@ import {
   routeExplorationMapEdges,
   unfoldExplorationMap,
 } from "./map-layout.js";
+import { adjustMathTagLayout } from "./math-layout.js";
 import {
   activeProofFoldIndex,
   createProofFoldIndex,
@@ -91,6 +92,7 @@ let currentProofFold = null;
 let expandedProofFoldPaths = new Set();
 let activeProofFoldForCollapse = null;
 let proofFoldCollapseAnimationFrame = null;
+let mathTagLayoutAnimationFrame = null;
 let mapCamera = {
   sessionId: null,
   x: 0,
@@ -234,6 +236,7 @@ function replaceProofFoldLink(
     if (details.open) {
       if (targetId) expandedProofFoldPaths.add(targetId);
       loadContent();
+      scheduleMathTagLayout();
       announce(`${label} expanded.`);
     } else {
       if (targetId) expandedProofFoldPaths.delete(targetId);
@@ -280,7 +283,16 @@ function enhanceRenderedContent(
     }
   }
 
+  scheduleMathTagLayout();
   return markdownLinks;
+}
+
+function scheduleMathTagLayout() {
+  if (mathTagLayoutAnimationFrame !== null) return;
+  mathTagLayoutAnimationFrame = window.requestAnimationFrame(() => {
+    mathTagLayoutAnimationFrame = null;
+    adjustMathTagLayout(elements.preview);
+  });
 }
 
 function configureProofFold(payload, preserveState) {
@@ -1460,6 +1472,8 @@ window.addEventListener("scroll", scheduleViewerContextReport, { passive: true }
 window.addEventListener("resize", scheduleViewerContextReport);
 window.addEventListener("scroll", scheduleProofFoldCollapseControl, { passive: true });
 window.addEventListener("resize", scheduleProofFoldCollapseControl);
+window.addEventListener("resize", scheduleMathTagLayout);
+document.fonts?.ready.then(scheduleMathTagLayout);
 document.addEventListener("selectionchange", scheduleViewerContextReport);
 
 for (const eventName of ["dragenter", "dragover"]) {

@@ -1,5 +1,23 @@
 # Repository agent instructions
 
+## Windows-first repository tooling
+
+Treat the Windows environment as authoritative for this repository. It builds,
+tests, packages, and releases a Windows desktop application from a working tree
+on the Windows filesystem.
+
+- Run dependency installation, Node package scripts, automated tests, Vite
+  asset builds, .NET restore/build/publish commands, installer operations, and
+  release commands with Windows executables and Windows working-tree paths.
+- Do not try the WSL version of a project tool first. WSL utilities may be used
+  for read-only inspection, searching, and file editing, but not as the runtime
+  used to test or build the application.
+- A Windows process launched from WSL may inherit WSL's process `PATH` instead
+  of the user `PATH` assembled by Windows. If a Windows tool does not resolve by
+  name, use its full Windows installation path rather than falling back to the
+  WSL tool. In particular, use `C:\Program Files\nodejs\npm.cmd` for npm and
+  `C:\Program Files\dotnet\dotnet.exe` for .NET when necessary.
+
 ## Windows Git
 
 Use Windows Git for every Git operation in this repository. The working tree
