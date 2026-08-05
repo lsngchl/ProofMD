@@ -1,5 +1,14 @@
 # Repository agent instructions
 
+## Windows Git
+
+Use Windows Git for every Git operation in this repository. The working tree
+is stored on the Windows filesystem and is used to develop and release a
+Windows desktop application. When operating from WSL, invoke
+`/mnt/c/Program Files/Git/cmd/git.exe` with the Windows working-tree path (for
+this checkout, `-C C:/GitRepos/LeanMD`) instead of invoking WSL's
+`/usr/bin/git` against this working tree.
+
 ## Latest release in README
 
 Keep the latest stable release version near the top of the root `README.md` in the `**Latest release: <version>**` line.
