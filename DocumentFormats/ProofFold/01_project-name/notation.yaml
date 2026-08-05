@@ -1,3 +1,7 @@
 version: 1
 
 symbols: []
+
+conventions:
+  reserved_symbols: []
+  naming_rules: []
