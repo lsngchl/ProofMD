@@ -118,14 +118,23 @@ symbol acquires a persistent document-wide meaning, add one entry to
 Record only genuinely persistent notation.  Do not register bound variables,
 dummy indices, temporary scale parameters, or standard mathematical syntax.
 The registry contains only global notation, so do not add a `scope` field.
-Before introducing a persistent symbol, check the entire registry for both
-literal and visual conflicts.
+Before assigning a non-dummy symbol a meaning, consult `notation.yaml` and
+search its earlier uses in the recursively expanded proof.  Do not reuse it
+for a visibly different mathematical role, or for two different kinds of
+scale in the same local stretch of argument; reuse is acceptable only after
+the earlier role has clearly ended and a reader would not plausibly carry it
+forward.
 
 The registry also records document-wide notation conventions.  Reserve a
 local-looking symbol there when it keeps one semantic role across several
 stages of the expanded proof, and record general naming rules separately from
 named mathematical objects.  Do not use this mechanism to register disposable
 dummy variables.
+
+Registration in `reserved_symbols` is selective, but notation consistency is
+mandatory.  After adding or reorganizing a substantial passage, review
+repeated non-dummy symbols in the fully expanded proof and eliminate any
+confusing change of meaning whether or not those symbols are registered.
 
 Local notation is scoped by the fully expanded linear proof, not by file
 boundaries.  A fold and every nested fold inherit the local bindings active at
@@ -177,6 +186,8 @@ Before declaring the proof complete, verify all of the following:
 - all relative links and all paths in `prooffold.json` resolve;
 - `notation.yaml` parses, has no duplicate symbol, and every `introduced_at`
   path exists;
+- repeated non-dummy symbols have been reviewed in the fully expanded proof,
+  and no confusing change of meaning remains;
 - equation labels are unique and occur in natural reading order in the fully
   expanded document;
 - Markdown tables, code fences, and mathematics delimiters render correctly;
