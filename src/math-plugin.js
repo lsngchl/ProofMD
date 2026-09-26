@@ -19,22 +19,22 @@ export function mathPlugin(md, options = {}) {
     throw new TypeError("mathPlugin requires a KaTeX-compatible engine.");
   }
 
-  md.inline.ruler.before("escape", "leanmd_math_inline", inlineMathRule);
-  md.block.ruler.before("fence", "leanmd_math_block", blockMathRule, {
+  md.inline.ruler.before("escape", "proofmd_math_inline", inlineMathRule);
+  md.block.ruler.before("fence", "proofmd_math_block", blockMathRule, {
     alt: ["paragraph", "reference", "blockquote", "list"],
   });
 
-  md.renderer.rules.leanmd_math_inline = (tokens, index) => {
+  md.renderer.rules.proofmd_math_inline = (tokens, index) => {
     const rendered = renderMath(tokens[index].content, false);
     return `<span class="math-inline">${rendered}</span>`;
   };
 
-  md.renderer.rules.leanmd_math_display_inline = (tokens, index) => {
+  md.renderer.rules.proofmd_math_display_inline = (tokens, index) => {
     const rendered = renderMath(tokens[index].content, true);
     return `<span class="math-display">${rendered}</span>`;
   };
 
-  md.renderer.rules.leanmd_math_block = (tokens, index) => {
+  md.renderer.rules.proofmd_math_block = (tokens, index) => {
     const rendered = renderMath(tokens[index].content, true);
     const attributes = md.renderer.renderAttrs(tokens[index]);
     return `<div class="math-display"${attributes}>${rendered}</div>\n`;
@@ -104,8 +104,8 @@ function inlineMathRule(state, silent) {
 
   if (!silent) {
     const tokenType = delimiter.display
-      ? "leanmd_math_display_inline"
-      : "leanmd_math_inline";
+      ? "proofmd_math_display_inline"
+      : "proofmd_math_inline";
     const token = state.push(tokenType, "math", 0);
     token.content = content;
     token.markup = delimiter.open;
@@ -172,7 +172,7 @@ function blockMathRule(state, startLine, endLine, silent) {
   }
 
   state.line = line + 1;
-  const token = state.push("leanmd_math_block", "math", 0);
+  const token = state.push("proofmd_math_block", "math", 0);
   token.block = true;
   token.content = content;
   token.map = [startLine, state.line];

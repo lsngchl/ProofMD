@@ -9,9 +9,4 @@ desktop/**/obj/
 test/**/bin/
 test/**/obj/
 release/
-/leanmd-build/*.html
-**/.leanmd/current-context.json
-**/.leanmd/.current-context.*.tmp
-**/.leanmd/exploration-map.json
-**/.leanmd/.exploration-map.*.tmp
-desktop/LeanMD/Assets/LeanMD.png
+desktop/ProofMD/Assets/ProofMD.png

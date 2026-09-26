@@ -1075,20 +1075,6 @@ a:focus-visible {
   vertical-align: 0.04em;
 }
 
-.map-node.is-unexplored {
-  border-style: dashed;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
-  box-shadow: 0 6px 18px rgb(0 0 0 / 5%);
-}
-
-.map-node.is-unexplored strong {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  font-size: 1.15rem;
-  font-weight: 760;
-  text-align: center;
-}
-
 .map-node.is-current {
   z-index: 1;
   border-width: 2px;

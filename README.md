@@ -1,6 +1,8 @@
-# LeanMD Viewer
+# ProofMD Viewer
 
-**Latest release: 1.5.1**
+**Latest release: 2.0.0**
+
+[Download the Windows release](https://github.com/lsngchl/ProofMD/releases/latest)
 
 A small, local-first Markdown viewer that renders LaTeX written with either
 `\(...\)` and `\[...\]` or `$...$` and `$$...$$`.
@@ -8,9 +10,8 @@ A small, local-first Markdown viewer that renders LaTeX written with either
 ## Workspace layout
 
 - Viewer source: `index.html` and `src/`
-- Windows desktop wrapper and installer scripts: `desktop/LeanMD/`
-- Document formats: `DocumentFormats/LeanMD/` and `DocumentFormats/ProofFold/`
-- Application asset scripts: `scripts/`
+- Windows desktop wrapper and installer scripts: `desktop/ProofMD/`
+- ProofFold format: `DocumentFormats/ProofFold/`
 - Automated tests: `test/`
 
 The tracked package metadata, executable metadata, application manifest, and
@@ -25,17 +26,14 @@ installer display version are kept in sync with the latest release shown above.
 - Display mathematics with `$$...$$`
 - KaTeX rendering with no remote font or script requests
 - File picker, drag and drop, light/dark theme, and print styles
-- In-app navigation for relative Markdown links and a structure-aware exploration map
+- In-app navigation for relative Markdown links and an exploration map
 - In-place, recursively nested ProofFold disclosures from an adjacent `prooffold.json`
-- Undiscovered links inside the current LeanMD structure reuse the current viewer window
 - Recursive map layout that keeps sibling subtrees ordered as branches grow
 - Map branches ordered by their source links rather than discovery order
 - Drag-to-pan map navigation with slider, button, fit, and wheel zoom controls
-- Focused structured maps with the root branches, active path, and current children
 - Collapsible `+N` branches for temporarily revealing nearby structure
 - Shared DAG branches unfolded into duplicate, state-synchronized tree nodes
 - Card-preserving semantic overview below 40% zoom and from the Overview button
-- Persistent exploration maps for structured LeanMD document sets
 - Per-document unresolved toggles with composable map badges
 - External-link icons for web references that open in the system browser
 - Source-anchored reading-position restoration when navigating back
@@ -43,61 +41,9 @@ installer display version are kept in sync with the latest release shown above.
 - Markdown footnotes with linked references and backreferences
 - Raw HTML in Markdown is disabled
 
-Use a standard Markdown link title to express the question that following the
-link answers. A `"why"` link answers “Why does this hold?” by opening a more
-detailed argument. A `"recall"` link answers “What was this again?” by returning
-to a definition, notation, or earlier context. Link roles do not determine map
-topology: any target in the current `.leanmd/dependencies.json` structure opens
-in the same window and is placed by the why DAG. An undiscovered `"recall"`
-target outside that structure still opens an independent window.
-
-```md
-[Why this holds](./details.md "why")
-[What this meant](./definition.md "recall")
-```
-
-The LeanMD validator reads the `"why"` links in `root.md` and `nodes/*.md`
-directly and writes the complete DAG to the generated
-`.leanmd/dependencies.json` manifest. `"recall"` links remain navigation
-metadata in Markdown and are ignored by why-DAG validation.
-
-When the desktop viewer finds `.leanmd/dependencies.json` in the current
-document's directory or one of its ancestors, it treats that directory as a
-structured LeanMD document set. The active document, visible source-line range,
-and selected passage are written to the ignored
-`.leanmd/current-context.json` file for local Codex context sharing. Ordinary
-Markdown files outside a structured document set are still viewed and
-automatically reloaded without creating this context file.
-
-The primary viewer window saves exploration progress in the ignored
-`.leanmd/exploration-map.json` file. Its detailed map shows the root, every direct
-child of the root, the active path to the current document, and the current
-document's direct children. A `+N` control reveals hidden children on demand.
-Unexplored documents appear as `?` nodes and reveal their names and paths after
-they are opened. When multiple parents share a child, the map unfolds that child
-and its descendants under every displayed parent. Those visual occurrences still
-represent one document, so opening any occurrence updates all of them together.
-
-At 40% zoom or below, the map switches to a semantic overview of the full
-unfolded structure. It returns to the detailed map above 48% zoom. Overview keeps
-the same rectangular cards and tree spacing, replacing unreadable text with large
-centered state icons. Unresolved documents use the center icon rather than an
-attached badge, and the previous-document marker is omitted. The Overview button
-enters this mode directly and fits the full structure to the viewport. The viewer
-watches `dependencies.json` and refreshes the map when dependencies change.
-Resetting clears exploration progress except for the current document. Independent
-recall windows keep temporary maps.
-
 An adjacent `<document>.unresolved` marker records that a document is not yet
 understood. The desktop viewer creates or removes this marker from the document
 toolbar and reflects it on every visible occurrence of the node in the map.
-Unresolved state is independent of exploration state: resetting the map may hide
-the node, but the marker remains and is shown again when the node is revealed.
-
-The document-set entry point is `root.md`. Every other authored document lives
-directly under `nodes/`, so logical proof depth does not increase filesystem
-path depth. Node filenames are unique lowercase ASCII slugs, while the first
-level-one heading supplies the displayed title.
 
 For ProofFold documents, the app checks only for `prooffold.json` beside the
 Markdown file being opened. ProofFold mode is enabled when the manifest's
@@ -109,19 +55,32 @@ brand changes to ProofFold and the map shows every reachable fold immediately
 as a top-down tree rooted at the entry document; it does not use exploration
 state.
 
-Validate a document set, or regenerate its complete manifest after editing why
-links, by passing its path:
-
-```sh
-node DocumentFormats/LeanMD/validate-why-dag.js path/to/document_set
-node DocumentFormats/LeanMD/validate-why-dag.js path/to/document_set --write
-```
+The retired LeanMD document-set format has been removed. Its Markdown files open
+as ordinary Markdown. The viewer ignores `.leanmd/` metadata and keeps ordinary
+Markdown exploration maps in memory for the current window session.
+Relative Markdown links, including links titled `"why"` or `"recall"`, navigate
+in the current window.
 
 Run the app feature test suite with:
 
 ```sh
 npm test
 ```
+
+Run the desktop navigation, unresolved-state, and ProofFold tests on Windows with:
+
+```powershell
+dotnet run --project test/ProofMD.DesktopTests/ProofMD.DesktopTests.csproj
+```
+
+Run the Windows installer migration tests with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File test/installer.test.ps1
+```
+
+These tests use temporary folders and an isolated registry key, which they remove
+afterward.
 
 ## Run locally
 
@@ -146,21 +105,71 @@ The Windows desktop wrapper accepts a Markdown path as its first command-line
 argument and loads cacheable viewer assets in WebView2.
 
 ```powershell
-dotnet publish desktop/LeanMD/LeanMD.csproj -c Release -r win-x64 --self-contained false -o release/LeanMD-<version>
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Build-Release.ps1
 ```
 
-Official release folders use the `release/LeanMD-<version>/` naming convention.
-Replace `<version>` in the command above with the latest release shown at the top
-of this README. After publishing, run `Install-LeanMD.cmd` from that release
-folder to install the app for the current user.
-The installer registers LeanMD as an available handler for `.md` and `.markdown`,
+The script checks that all tracked version numbers match, builds the web assets,
+and publishes the Windows app to `release/ProofMD-<version>/`. It replaces only
+that version's output folder and stops immediately if a build step fails. Add
+`-Archive` to create `release/ProofMD-<version>-win-x64.zip` for GitHub Releases.
+
+The app requires the .NET 10 Desktop Runtime for Windows x64 and Microsoft Edge
+WebView2 Runtime. Run `Install-ProofMD.cmd` from the release folder to install the
+app for the current user.
+The installer registers ProofMD as an available handler for `.md` and `.markdown`,
 but does not open Windows Default Apps settings or change the existing default app.
 Administrator privileges are not required.
+
+When upgrading from LeanMD, close the existing app before running the installer.
+ProofMD installs into `%LOCALAPPDATA%\Programs\ProofMD` and replaces the registered
+LeanMD installation and Start Menu shortcut. Existing Markdown default-app
+choices continue to work through compatibility registrations that launch
+`ProofMD.exe`. Other default-app choices remain in place.
+
+On first launch, ProofMD copies the saved window position and moves the WebView2
+profile from `%LOCALAPPDATA%\LeanMD` to `%LOCALAPPDATA%\ProofMD`. Existing ProofMD
+settings take precedence. The internal viewer origin stays `leanmd.local` so the
+saved light/dark preference remains accessible; the preference is then saved
+under the new `proofmd-theme` key. A locked legacy profile produces a retry
+message, preserving the original data. Uninstalling ProofMD removes its current
+profile and registrations; any remaining legacy settings backup is retained.
 
 On first launch, the desktop window uses most of the primary monitor's working
 area. On subsequent launches it restores the last normal size and position,
 including whether the window was maximized. If the saved monitor is no longer
-available, LeanMD falls back to a large centered window on the primary display.
+available, ProofMD falls back to a large centered window on the primary display.
 The window remains transparent while WebView2 prepares the viewer shell. It is
 revealed only after the shell has painted, and Markdown rendering starts after
 the visible loading state has painted once.
+
+## Publish a tagged release
+
+Starting with 2.0.0, official releases use an annotated `v<version>` Git tag and
+a GitHub Release containing the Windows x64 ZIP. Keep published tags fixed so
+each download corresponds to one source revision.
+
+1. Update the stable version in `package.json`, `ProofMD.csproj`, `app.manifest`,
+   the installer display version, and the latest-release line above. Write
+   `release-notes/<version>.md` describing changes and installation requirements.
+2. Run the web, desktop, and installer tests documented above. Stage all changes
+   with `git add -A`, then run `git commit` separately to create the release commit.
+3. From that clean checkout, run the release build with `-Archive`. Check the
+   published executable's version and the ZIP contents.
+4. Create the annotated tag, push the source commit and tag together, then upload
+   the ZIP to a draft GitHub Release. After checking the draft, publish it.
+
+The following commands run in Windows PowerShell from the repository root after
+the source commit and release ZIP are ready. GitHub CLI must be authenticated:
+
+```powershell
+$version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+$tag = "v$version"
+git tag -a $tag -m "ProofMD $version"
+git push --atomic origin HEAD:main $tag
+gh release create $tag "release/ProofMD-$version-win-x64.zip" --verify-tag --draft --title "ProofMD $version" --notes-file "release-notes/$version.md"
+gh release edit $tag --draft=false --latest
+```
+
+For this version, the tag is `v2.0.0` and the asset is
+`ProofMD-2.0.0-win-x64.zip`. Local release folders remain generated output;
+GitHub Releases stores the downloadable ZIP alongside the tagged source.

@@ -1,0 +1,86 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AssemblyName>ProofMD</AssemblyName>
+    <RootNamespace>ProofMD</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\ProofMD.ico</ApplicationIcon>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <WebView2NeverCopyLoaderDllToOutputDirectory>true</WebView2NeverCopyLoaderDllToOutputDirectory>
+    <AllowedReferenceRelatedFileExtensions>.none</AllowedReferenceRelatedFileExtensions>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <Version>2.0.0</Version>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
+    <InformationalVersion>2.0.0</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Authors>ProofMD</Authors>
+    <Description>A lightweight local Markdown and LaTeX viewer.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\ProofMD.ico" LogicalName="ProofMD.AppIcon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\dist-desktop\**\*">
+      <Link>Viewer\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <TargetPath>Viewer\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+    </Content>
+    <None Include="Installer\Install-ProofMD.cmd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <TargetPath>Install-ProofMD.cmd</TargetPath>
+    </None>
+    <None Include="Installer\ProofMD.Installation.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <TargetPath>ProofMD.Installation.ps1</TargetPath>
+    </None>
+    <None Include="Installer\Install-ProofMD.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <TargetPath>Install-ProofMD.ps1</TargetPath>
+    </None>
+    <None Include="Installer\Uninstall-ProofMD.cmd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <TargetPath>Uninstall-ProofMD.cmd</TargetPath>
+    </None>
+    <None Include="Installer\Uninstall-ProofMD.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <TargetPath>Uninstall-ProofMD.ps1</TargetPath>
+    </None>
+  </ItemGroup>
+
+  <Target Name="EnsureViewerExists" BeforeTargets="PrepareResources">
+    <Error
+      Condition="!Exists('..\..\dist-desktop\index.html')"
+      Text="Build the cacheable desktop viewer assets before building ProofMD.exe."
+    />
+  </Target>
+
+  <Target Name="RemoveUnusedWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference
+        Remove="@(Reference)"
+        Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf'"
+      />
+    </ItemGroup>
+  </Target>
+</Project>

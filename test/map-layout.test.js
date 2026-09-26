@@ -29,7 +29,7 @@ test("unfolds shared DAG descendants into synchronized document occurrences", ()
     node("root", 0),
     node("A", 1),
     node("B", 2),
-    { ...node("C", 3), label: "?", unexplored: true },
+    { ...node("C", 3), label: "Shared result", unresolved: true },
     node("D", 4),
   ];
   const edges = [
@@ -54,7 +54,7 @@ test("unfolds shared DAG descendants into synchronized document occurrences", ()
   assert.ok(
     unfolded.nodes
       .filter((occurrence) => occurrence.documentId === "C")
-      .every((occurrence) => occurrence.label === "?" && occurrence.unexplored),
+      .every((occurrence) => occurrence.label === "Shared result" && occurrence.unresolved),
   );
   assert.ok(
     unfolded.nodes

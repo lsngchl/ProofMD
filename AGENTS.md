@@ -24,7 +24,7 @@ Use Windows Git for every Git operation in this repository. The working tree
 is stored on the Windows filesystem and is used to develop and release a
 Windows desktop application. When operating from WSL, invoke
 `/mnt/c/Program Files/Git/cmd/git.exe` with the Windows working-tree path (for
-this checkout, `-C C:/GitRepos/LeanMD`) instead of invoking WSL's
+this checkout, `-C C:/GitRepos/ProofMD`) instead of invoking WSL's
 `/usr/bin/git` against this working tree.
 
 ## Latest release in README
@@ -33,20 +33,23 @@ Keep the latest stable release version near the top of the root `README.md` in t
 Whenever the stable release version changes, update that line as part of the same change and keep it consistent with the tracked package, executable, manifest, and installer versions.
 Record only stable release versions in this line; do not record test, development, preview, nightly, release-candidate, or other non-production build versions.
 
-## Local release requests
+## Tagged releases from 2.0.0
 
-In this repository, a request to "release" the current version means rebuilding
-the gitignored local `release/LeanMD-<version>/` folder from the currently
-checked-out source. The release folder is generated locally because it is not
-restored when source changes are fetched from Git. If the user also asks to
-update this machine, install the application from that regenerated local release
-folder.
+Starting with 2.0.0, a request to release a version means preparing its source
+commit, an annotated `v<version>` Git tag, and a GitHub Release with the Windows
+x64 ZIP attached. Follow the release procedure in `README.md`, including the
+version checks, tests, and tracked `release-notes/<version>.md` file.
 
-Follow the release commands documented in `README.md` in order. Treat every
-step as fail-fast: if the web asset build fails, stop and do not run
-`dotnet publish`. Before publishing, remove only the exact target-version output
-folder so stale files cannot survive into the regenerated release.
+Build with `scripts/Build-Release.ps1 -Archive` on Windows. It regenerates the
+gitignored `release/ProofMD-<version>/` folder and its ZIP. Every build step is
+fail-fast: a failed web build must stop before `dotnet publish`. Remove only the
+exact target-version output folder after validating its absolute path.
 
-Do not create or push Git tags, create GitHub Releases, upload artifacts, or
-create release archives or checksums unless the user explicitly requests those
-remote or packaging actions.
+Commit the release source before creating its tag, and publish the branch and
+tag together. Never move an already published release tag. Upload the ZIP to a
+draft GitHub Release, verify its tag and asset, then publish the release.
+Authenticated `gh` commands must run in the normal Windows environment.
+
+An explicitly local-only build skips tags, pushes, and GitHub publishing. Update
+the app installed on this machine only when the user requests installation.
+Checksums and additional distribution formats require an explicit request.

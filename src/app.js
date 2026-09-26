@@ -8,6 +8,7 @@ import {
   unfoldExplorationMap,
 } from "./map-layout.js";
 import { adjustMathTagLayout } from "./math-layout.js";
+import { readStoredTheme } from "./theme-storage.js";
 import {
   activeProofFoldIndex,
   createProofFoldIndex,
@@ -69,7 +70,6 @@ const MAP_OVERVIEW_ENTER_ZOOM = 0.4;
 const MAP_OVERVIEW_EXIT_ZOOM = 0.48;
 const SOURCE_BLOCK_SELECTOR =
   "[data-source-start-line][data-source-end-line]";
-const VIEWER_CONTEXT_DEBOUNCE_MILLISECONDS = 300;
 let renderGeneration = 0;
 let rendererPromise;
 let renderedMapLayout = null;
@@ -83,7 +83,6 @@ let expandedMapOccurrenceKeys = new Set();
 let currentDocumentContextId = null;
 let currentDocumentUnresolved = false;
 let unresolvedRequestPending = false;
-let viewerContextTimer = null;
 let currentProofFold = null;
 let expandedProofFoldPaths = new Set();
 let activeProofFoldForCollapse = null;
@@ -238,7 +237,6 @@ function replaceProofFoldLink(
       if (targetId) expandedProofFoldPaths.delete(targetId);
       announce(`${label} collapsed.`);
     }
-    scheduleViewerContextReport();
     scheduleProofFoldCollapseControl();
   });
 
@@ -382,7 +380,7 @@ function renderDocument(
   } = {},
 ) {
   configureProofFold(proofFold, preserveProofFoldState);
-  setProductBrand(currentProofFold ? "ProofFold" : "LeanMD");
+  setProductBrand(currentProofFold ? "ProofFold" : "ProofMD");
   setEmptyStateVisible(false);
   const entryId = currentProofFold?.entry ?? null;
   elements.preview.innerHTML = renderMarkdown(source, { documentId: entryId });
@@ -395,7 +393,7 @@ function renderDocument(
     entryId ? [entryId] : [],
   );
   for (const [order, link] of markdownLinks.entries()) {
-    link.dataset.leanmdLinkOrder = String(order);
+    link.dataset.proofmdLinkOrder = String(order);
   }
 
   if (webViewHost && Number.isInteger(currentDocumentContextId)) {
@@ -409,12 +407,11 @@ function renderDocument(
     });
   }
 
-  document.title = `${name} — ${currentProofFold ? "ProofFold" : "LeanMD"}`;
+  document.title = `${name} — ${currentProofFold ? "ProofFold" : "ProofMD"}`;
   announce(`${name} rendered.`);
   if (resetScroll) {
     window.scrollTo({ top: 0, behavior: "auto" });
   }
-  scheduleViewerContextReport();
   scheduleProofFoldCollapseControl();
 }
 
@@ -496,104 +493,6 @@ function restoreDocumentPosition(position) {
     top: Math.min(maximumScroll, Math.max(0, targetScrollY)),
     behavior: "auto",
   });
-  scheduleViewerContextReport();
-}
-
-function currentSelectionFocus() {
-  const selection = window.getSelection();
-  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
-
-  const range = selection.getRangeAt(0);
-  const startElement =
-    range.startContainer instanceof Element
-      ? range.startContainer
-      : range.startContainer.parentElement;
-  const endElement =
-    range.endContainer instanceof Element
-      ? range.endContainer
-      : range.endContainer.parentElement;
-  if (
-    !startElement ||
-    !endElement ||
-    !elements.preview.contains(startElement) ||
-    !elements.preview.contains(endElement)
-  ) {
-    return null;
-  }
-
-  const startRange = sourceRangeForElement(
-    startElement.closest(SOURCE_BLOCK_SELECTOR),
-  );
-  const endRange = sourceRangeForElement(
-    endElement.closest(SOURCE_BLOCK_SELECTOR),
-  );
-  const selectedText = selection.toString().trim();
-  if (!startRange || !endRange || !selectedText) return null;
-
-  return {
-    startLine: Math.min(startRange.startLine, endRange.startLine),
-    endLine: Math.max(startRange.endLine, endRange.endLine),
-    selectedText: selectedText.slice(0, 2000),
-  };
-}
-
-function reportViewerContext() {
-  viewerContextTimer = null;
-  if (!webViewHost || !Number.isInteger(currentDocumentContextId)) return;
-
-  const visibleBlocks = leafSourceBlocks()
-    .map((element) => ({
-      element,
-      range: sourceRangeForElement(element),
-      bounds: element.getBoundingClientRect(),
-    }))
-    .filter(
-      ({ range, bounds }) =>
-        range &&
-        bounds.width > 0 &&
-        bounds.height > 0 &&
-        bounds.bottom > 0 &&
-        bounds.top < window.innerHeight,
-    );
-
-  let viewport = null;
-  if (visibleBlocks.length > 0) {
-    const viewportCenter = window.innerHeight / 2;
-    const centerBlock = visibleBlocks.reduce((closest, candidate) => {
-      const closestDistance = Math.abs(
-        closest.bounds.top + closest.bounds.height / 2 - viewportCenter,
-      );
-      const candidateDistance = Math.abs(
-        candidate.bounds.top + candidate.bounds.height / 2 - viewportCenter,
-      );
-      return candidateDistance < closestDistance ? candidate : closest;
-    });
-
-    viewport = {
-      startLine: Math.min(...visibleBlocks.map(({ range }) => range.startLine)),
-      endLine: Math.max(...visibleBlocks.map(({ range }) => range.endLine)),
-      centerLine: Math.round(
-        (centerBlock.range.startLine + centerBlock.range.endLine) / 2,
-      ),
-    };
-  }
-
-  webViewHost.postMessage({
-    type: "viewer-context",
-    contextId: currentDocumentContextId,
-    viewport,
-    focus: currentSelectionFocus(),
-  });
-}
-
-function scheduleViewerContextReport() {
-  if (!webViewHost || !Number.isInteger(currentDocumentContextId)) return;
-
-  window.clearTimeout(viewerContextTimer);
-  viewerContextTimer = window.setTimeout(
-    reportViewerContext,
-    VIEWER_CONTEXT_DEBOUNCE_MILLISECONDS,
-  );
 }
 
 function isRelativeMarkdownLink(href) {
@@ -655,11 +554,7 @@ function setMapState(nextState) {
   }
 
   mapState = {
-    format: nextState.format === "prooffold"
-      ? "prooffold"
-      : nextState.format === "leanmd"
-        ? "leanmd"
-        : "markdown",
+    format: nextState.format === "prooffold" ? "prooffold" : "markdown",
     sessionId: nextState.sessionId,
     root: typeof nextState.root === "string" ? nextState.root : null,
     current: typeof nextState.current === "string" ? nextState.current : null,
@@ -777,15 +672,11 @@ function renderMap() {
     button.type = "button";
     const isCurrent = documentId === mapState.current;
     const isPrevious = documentId === mapState.previous;
-    const isUnexplored = node.unexplored === true;
     const isUnresolved = node.unresolved === true;
     const stateDescriptions = [];
     if (isCurrent) stateDescriptions.push("Current document.");
     if (isPrevious) stateDescriptions.push("Previous document.");
     if (isUnresolved) stateDescriptions.push("Unresolved document.");
-    if (isUnexplored) {
-      stateDescriptions.push("Unexplored document in the LeanMD structure.");
-    }
     const stateDescription = stateDescriptions.length
       ? `${stateDescriptions.join(" ")} `
       : "";
@@ -804,7 +695,6 @@ function renderMap() {
     button.classList.toggle("is-root", isRoot);
     button.classList.toggle("is-current", isCurrent);
     button.classList.toggle("is-previous", isPrevious && !mapOverviewMode);
-    button.classList.toggle("is-unexplored", isUnexplored);
     button.classList.toggle("is-unresolved", isUnresolved);
 
     const label = document.createElement("strong");
@@ -817,11 +707,9 @@ function renderMap() {
     glyph.setAttribute("aria-hidden", "true");
     glyph.textContent = isUnresolved
       ? "!"
-      : isUnexplored
-        ? "?"
-        : isRoot
-          ? "◆"
-          : "●";
+      : isRoot
+        ? "◆"
+        : "●";
     button.append(label, detail, glyph);
 
     button.addEventListener("click", () => {
@@ -1214,13 +1102,11 @@ function showEmptyState() {
     proofFoldCollapseAnimationFrame = null;
   }
   elements.proofFoldCollapseButton.hidden = true;
-  setProductBrand("LeanMD");
+  setProductBrand("ProofMD");
   setDocumentUnresolvedState(false, false);
-  window.clearTimeout(viewerContextTimer);
-  viewerContextTimer = null;
   elements.preview.replaceChildren();
   elements.documentName.textContent = "No document open";
-  document.title = "LeanMD Viewer";
+  document.title = "ProofMD Viewer";
   setEmptyStateVisible(true);
   setDocumentLoading(false);
   announce("No document open. Drop a Markdown file or use Open .md.");
@@ -1275,7 +1161,7 @@ function setTheme(theme) {
   );
 
   try {
-    localStorage.setItem("leanmd-theme", theme);
+    localStorage.setItem("proofmd-theme", theme);
   } catch {
     // Storage may be unavailable for a local file; the theme still works.
   }
@@ -1283,8 +1169,8 @@ function setTheme(theme) {
 
 function initialTheme() {
   try {
-    const saved = localStorage.getItem("leanmd-theme");
-    if (saved === "light" || saved === "dark") return saved;
+    const saved = readStoredTheme(localStorage);
+    if (saved) return saved;
   } catch {
     // Fall through to the operating-system preference.
   }
@@ -1330,12 +1216,10 @@ elements.preview.addEventListener("click", (event) => {
   if (!isRelativeMarkdownLink(href)) return;
 
   event.preventDefault();
-  const role = link.getAttribute("title")?.trim().toLowerCase() ?? "";
-  const order = Number(link.dataset.leanmdLinkOrder);
+  const order = Number(link.dataset.proofmdLinkOrder);
   webViewHost.postMessage({
     type: "open-markdown-link",
     href,
-    role,
     sourceDocument: link.dataset.proofFoldSource ?? null,
     order: Number.isInteger(order) && order >= 0 ? order : null,
     position: currentDocumentPosition(),
@@ -1470,13 +1354,10 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-window.addEventListener("scroll", scheduleViewerContextReport, { passive: true });
-window.addEventListener("resize", scheduleViewerContextReport);
 window.addEventListener("scroll", scheduleProofFoldCollapseControl, { passive: true });
 window.addEventListener("resize", scheduleProofFoldCollapseControl);
 window.addEventListener("resize", scheduleMathTagLayout);
 document.fonts?.ready.then(scheduleMathTagLayout);
-document.addEventListener("selectionchange", scheduleViewerContextReport);
 
 for (const eventName of ["dragenter", "dragover"]) {
   window.addEventListener(eventName, (event) => {
@@ -1509,7 +1390,7 @@ window.addEventListener("drop", (event) => {
   openFile(file);
 });
 
-window.LeanMD = Object.freeze({
+window.ProofMD = Object.freeze({
   openMarkdown(
     source,
     name = "Untitled.md",
@@ -1548,7 +1429,7 @@ if (webViewHost) {
   webViewHost.addEventListener("message", async (event) => {
     const message = event.data;
     if (message?.type === "open-markdown") {
-      window.LeanMD.openMarkdown(
+      window.ProofMD.openMarkdown(
         message.source,
         message.name,
         message.contextId,
@@ -1557,14 +1438,14 @@ if (webViewHost) {
         message.proofFold,
       );
     } else if (message?.type === "reload-markdown") {
-      await window.LeanMD.reloadMarkdown(
+      await window.ProofMD.reloadMarkdown(
         message.source,
         message.name,
         message.contextId,
         message.proofFold,
       );
     } else if (message?.type === "show-empty-state") {
-      window.LeanMD.showEmptyState();
+      window.ProofMD.showEmptyState();
     } else if (message?.type === "host-window-visible") {
       await waitForPaint();
       webViewHost.postMessage({ type: "viewer-window-painted" });

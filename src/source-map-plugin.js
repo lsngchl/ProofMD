@@ -1,5 +1,5 @@
 export function sourceMapPlugin(markdown) {
-  markdown.core.ruler.after("block", "leanmd_source_map", (state) => {
+  markdown.core.ruler.after("block", "proofmd_source_map", (state) => {
     for (const token of state.tokens) {
       if (!token.block || !Array.isArray(token.map) || token.map.length !== 2) {
         continue;

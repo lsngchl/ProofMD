@@ -1,13 +1,12 @@
 {
-  "name": "lean-md-viewer",
-  "version": "1.5.1",
+  "name": "proof-md-viewer",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:leanmd": "node leanmd-build/build.js",
-    "test": "node --test test/leanmd-build.test.js test/map-layout.test.js test/math-plugin.test.js test/proof-fold.test.js"
+    "test": "node --test test/map-layout.test.js test/math-plugin.test.js test/proof-fold.test.js test/theme-storage.test.js"
   },
   "dependencies": {
     "katex": "^0.16.22",
