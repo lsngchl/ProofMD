@@ -361,7 +361,7 @@ internal sealed class MainForm : Form
                 : await ReadMarkdownSourceAsync(markdownPath);
             markdownPath = Path.GetFullPath(markdownPath);
             ProofFoldStructure? proofFoldStructure =
-                ProofFoldStructure.LoadForEntry(markdownPath);
+                ProofFoldStructure.TryLoadForEntry(markdownPath);
             _markdownPath = markdownPath;
             _lastMarkdownDirectory = Path.GetDirectoryName(markdownPath);
             _initialMarkdownReadTask = null;
@@ -1045,7 +1045,7 @@ internal sealed class MainForm : Form
 
                 string source = await ReadMarkdownSourceAsync(markdownPath);
                 ProofFoldStructure? proofFoldStructure =
-                    ProofFoldStructure.LoadForEntry(markdownPath);
+                    ProofFoldStructure.TryLoadForEntry(markdownPath);
                 bool proofFoldUnchanged = string.Equals(
                     proofFoldStructure?.Fingerprint,
                     _proofFoldStructure?.Fingerprint,

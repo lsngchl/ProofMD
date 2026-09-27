@@ -68,6 +68,8 @@ try
 
     TestProofFoldStructure(testRoot);
     TestProofFoldMissingDirectory(testRoot);
+    TestProofFoldOptionalComponents(testRoot);
+    TestProofFoldRecovery(testRoot);
     TestUserProfileMigration(testRoot);
 
     Console.WriteLine("Markdown navigation, unresolved state, ProofFold, and profile migration tests passed.");
@@ -217,6 +219,94 @@ static void TestProofFoldMissingDirectory(string testRoot)
         removed.Documents.SequenceEqual([entry]) && removed.Edges.Count == 0 &&
         removed.Fingerprint == empty.Fingerprint,
         "Removing the folds directory should restore an entry-only ProofFold document.");
+}
+
+static void TestProofFoldOptionalComponents(string testRoot)
+{
+    for (int components = 0; components < 8; components++)
+    {
+        string root = Path.Combine(testRoot, $"proof-fold-components-{components}");
+        string entry = WriteDocument(root, "main.md");
+        File.AppendAllText(entry, "\n[First](folds/first.md \"fold\")\n");
+        if ((components & 1) != 0)
+        {
+            File.WriteAllText(Path.Combine(root, "notation.yaml"), "version: 1\nsymbols: []\n");
+        }
+        if ((components & 2) != 0) Directory.CreateDirectory(Path.Combine(root, "references"));
+        if ((components & 4) != 0) WriteDocument(root, "folds/first.md");
+        WriteProofFoldManifest(root, "folds");
+
+        ProofFoldStructure? structure = ProofFoldStructure.LoadForEntry(entry);
+        int expectedFolds = (components & 4) != 0 ? 1 : 0;
+        Assert(structure is not null && structure.Folds.Count == expectedFolds &&
+            structure.Documents.Count == expectedFolds + 1,
+            $"The entry should load with every combination of optional components ({components}).");
+    }
+
+    string minimalRoot = Path.Combine(testRoot, "proof-fold-minimal-manifest");
+    string minimalEntry = WriteDocument(minimalRoot, "main.md");
+    File.WriteAllText(Path.Combine(minimalRoot, "prooffold.json"),
+        """{"formatVersion":1,"entry":"main.md","foldsDirectory":"folds"}""");
+    Assert(ProofFoldStructure.LoadForEntry(minimalEntry) is not null,
+        "Authoring metadata that is not used for rendering should be optional.");
+    File.WriteAllText(Path.Combine(minimalRoot, "prooffold.json"),
+        """{"formatVersion":1,"entry":"main.md"}""");
+    Assert(ProofFoldStructure.LoadForEntry(minimalEntry) is { Folds.Count: 0 },
+        "The foldsDirectory field should be optional before any folds are created.");
+    WriteDocument(minimalRoot, "folds/first.md");
+    Assert(ProofFoldStructure.LoadForEntry(minimalEntry) is { Folds.Count: 1 },
+        "An omitted foldsDirectory should use the conventional folds directory.");
+}
+
+static void TestProofFoldRecovery(string testRoot)
+{
+    string root = Path.Combine(testRoot, "proof-fold-recovery");
+    string entry = WriteDocument(root, "main.md");
+    string ordinaryDocument = WriteDocument(root, "notes.md");
+    string manifestPath = Path.Combine(root, "prooffold.json");
+    string[] invalidManifests =
+    [
+        "{", "null", "[]", "1", "{}",
+        """{"formatVersion":"1","entry":"main.md","foldsDirectory":"folds"}""",
+        """{"formatVersion":2,"entry":"main.md","foldsDirectory":"folds"}""",
+        """{"formatVersion":1,"entry":null,"foldsDirectory":"folds"}""",
+        """{"formatVersion":1,"entry":"main.md","foldsDirectory":null}""",
+        """{"formatVersion":1,"entry":"main.md","foldsDirectory":"../outside"}""",
+        """{"formatVersion":1,"entry":"main.md","foldsDirectory":"bad\u0000path"}""",
+    ];
+    foreach (string manifest in invalidManifests)
+    {
+        File.WriteAllText(manifestPath, manifest);
+        Assert(ProofFoldStructure.TryLoadForEntry(entry) is null &&
+            ProofFoldStructure.TryLoadForEntry(ordinaryDocument) is null,
+            "Invalid ProofFold metadata should allow ordinary Markdown rendering.");
+    }
+
+    WriteProofFoldManifest(root, "folds");
+    using (var lockedManifest = new FileStream(manifestPath, FileMode.Open, FileAccess.Read, FileShare.None))
+    {
+        Assert(ProofFoldStructure.TryLoadForEntry(entry) is null,
+            "An unreadable manifest should allow ordinary Markdown rendering.");
+    }
+    Assert(ProofFoldStructure.TryLoadForEntry(entry) is not null,
+        "ProofFold should recover when its manifest becomes readable again.");
+
+    string firstFold = WriteDocument(root, "folds/first.md");
+    string secondFold = WriteDocument(root, "folds/second.md");
+    File.AppendAllText(entry,
+        "\n[First](folds/first.md \"fold\")\n[Second](folds/second.md \"fold\")\n");
+    ProofFoldStructure? partial;
+    using (var lockedFold = new FileStream(firstFold, FileMode.Open, FileAccess.Read, FileShare.None))
+    {
+        partial = ProofFoldStructure.TryLoadForEntry(entry);
+        Assert(partial is not null && partial.Folds.Count == 1 &&
+            partial.Documents.SequenceEqual([entry, secondFold]),
+            "An unreadable fold should leave the entry and other folds available.");
+    }
+    ProofFoldStructure? recovered = ProofFoldStructure.TryLoadForEntry(entry);
+    Assert(recovered is not null && recovered.Folds.Count == 2 &&
+        recovered.Fingerprint != partial!.Fingerprint,
+        "A recovered fold should update the rendered document and its map.");
 }
 
 static void WriteProofFoldManifest(string root, string foldsDirectory)

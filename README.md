@@ -1,6 +1,6 @@
 # ProofMD Viewer
 
-**Latest release: 2.0.1**
+**Latest release: 2.0.2**
 
 [Download the Windows release](https://github.com/lsngchl/ProofMD/releases/latest)
 
@@ -53,9 +53,12 @@ navigating away from the entry document. Opening a fold or reference file
 directly continues to use ordinary Markdown mode. In ProofFold mode, the app
 brand changes to ProofFold and the map shows every reachable fold immediately
 as a top-down tree rooted at the entry document; it does not use exploration
-state. The configured folds directory can be absent until the first fold is
-created. The entry remains readable, and adding or removing folds updates the
-document and its map automatically.
+state. An omitted `foldsDirectory` uses `folds/`, which can be absent until the
+first fold is created. The viewer does not require notation or reference files,
+directories, or their manifest fields. Unreadable folds are skipped while the
+entry and other folds remain available. If the manifest is invalid or unreadable,
+the document opens as ordinary Markdown. Editing the manifest updates the mode
+automatically; adding or removing folds updates the document and its map.
 
 Ordinary Markdown exploration maps stay in memory for the current window
 session. Relative Markdown links navigate in the current window.
@@ -80,6 +83,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File test/installer.test.ps1
 
 These tests use temporary folders and an isolated registry key, which they remove
 afterward.
+
+Verify document rendering through the installed Windows file associations with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File test/desktop-rendering.test.ps1 -ApplicationPath "$env:LOCALAPPDATA\Programs\ProofMD\ProofMD.exe" -UseFileAssociation
+```
+
+This test opens and closes temporary documents in the actual desktop app and
+checks that rendering completes, including after a manifest is damaged and
+repaired. It covers both `.md` and `.markdown` file associations. To test an
+uninstalled build, pass its executable path and omit `-UseFileAssociation`.
 
 ## Run locally
 
@@ -177,6 +191,6 @@ gh release create $tag "release/ProofMD-$version-win-x64.zip" --verify-tag --dra
 gh release edit $tag --draft=false --latest
 ```
 
-For this version, the tag is `v2.0.1` and the asset is
-`ProofMD-2.0.1-win-x64.zip`. Local release folders remain generated output;
+For this version, the tag is `v2.0.2` and the asset is
+`ProofMD-2.0.2-win-x64.zip`. Local release folders remain generated output;
 GitHub Releases stores the downloadable ZIP alongside the tagged source.

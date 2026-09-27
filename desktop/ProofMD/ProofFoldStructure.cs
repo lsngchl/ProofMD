@@ -54,6 +54,24 @@ internal sealed class ProofFoldStructure
     public IReadOnlyList<string> Documents { get; }
     public IReadOnlyList<ExplorationMapEdge> Edges { get; }
 
+    public static ProofFoldStructure? TryLoadForEntry(string markdownPath)
+    {
+        try
+        {
+            return LoadForEntry(markdownPath);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or
+                InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            // ProofFold augments a readable Markdown file; its metadata must not
+            // prevent opening or reloading the document itself.
+            System.Diagnostics.Trace.TraceWarning(
+                "ProofFold could not be loaded for {0}: {1}", markdownPath, exception.Message);
+            return null;
+        }
+    }
+
     public static ProofFoldStructure? LoadForEntry(string markdownPath)
     {
         string fullMarkdownPath = Path.GetFullPath(markdownPath);
@@ -79,7 +97,9 @@ internal sealed class ProofFoldStructure
         using (manifest)
         {
             JsonElement root = manifest.RootElement;
-            if (!root.TryGetProperty("formatVersion", out JsonElement versionElement) ||
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("formatVersion", out JsonElement versionElement) ||
+                versionElement.ValueKind != JsonValueKind.Number ||
                 !versionElement.TryGetInt32(out int version) ||
                 version != 1)
             {
@@ -97,25 +117,10 @@ internal sealed class ProofFoldStructure
 
             string foldsDirectory = ResolveConfiguredPath(
                 rootDirectory,
-                RequiredPath(root, "foldsDirectory"),
+                root.TryGetProperty("foldsDirectory", out _)
+                    ? RequiredPath(root, "foldsDirectory")
+                    : "folds",
                 "foldsDirectory");
-            string notationRegistryPath = ResolveConfiguredPath(
-                rootDirectory,
-                RequiredPath(root, "notationRegistry"),
-                "notationRegistry");
-            string referencesDirectory = ResolveConfiguredPath(
-                rootDirectory,
-                RequiredPath(root, "referencesDirectory"),
-                "referencesDirectory");
-
-            if (!File.Exists(notationRegistryPath))
-            {
-                throw new InvalidDataException("The configured ProofFold notation registry does not exist.");
-            }
-            if (!Directory.Exists(referencesDirectory))
-            {
-                throw new InvalidDataException("The configured ProofFold references directory does not exist.");
-            }
 
             var sourcePathsById = new Dictionary<string, string>(
                 StringComparer.OrdinalIgnoreCase)
@@ -129,18 +134,31 @@ internal sealed class ProofFoldStructure
             };
             var folds = new List<ProofFoldDocument>();
             IEnumerable<string> foldPaths = Directory.Exists(foldsDirectory)
-                ? Directory.EnumerateFiles(foldsDirectory, "*", SearchOption.AllDirectories)
+                ? Directory.EnumerateFiles(foldsDirectory, "*", new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = FileAttributes.ReparsePoint,
+                })
                 : [];
             foreach (string foldPath in foldPaths
                 .Where(IsMarkdownPath)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
             {
                 string id = CanonicalId(rootDirectory, foldPath);
-                string source = ReadSharedText(foldPath);
-                if (!sourcePathsById.TryAdd(id, foldPath))
+                if (sourcePathsById.ContainsKey(id)) continue;
+                string source;
+                try
                 {
-                    throw new InvalidDataException($"Duplicate ProofFold document path: {id}");
+                    source = ReadSharedText(foldPath);
                 }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    // A missing or unreadable fold gets the viewer's existing
+                    // unavailable-target message; other folds remain usable.
+                    continue;
+                }
+                sourcePathsById.Add(id, foldPath);
                 folds.Add(new ProofFoldDocument(id, source));
                 sourcesByPath.Add(foldPath, source);
             }

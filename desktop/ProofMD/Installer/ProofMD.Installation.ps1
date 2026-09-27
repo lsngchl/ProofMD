@@ -232,7 +232,7 @@ function Register-ProofMD($RegistryRoot, [string]$InstallDirectory, [string]$Leg
     }
     Set-ProofMDRegistryValues $RegistryRoot 'Software\Microsoft\Windows\CurrentVersion\Uninstall\ProofMD' @{
         DisplayName = 'ProofMD'
-        DisplayVersion = '2.0.1'
+        DisplayVersion = '2.0.2'
         Publisher = 'ProofMD'
         InstallLocation = $InstallDirectory
         DisplayIcon = $executable
