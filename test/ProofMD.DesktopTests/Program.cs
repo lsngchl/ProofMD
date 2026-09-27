@@ -67,6 +67,7 @@ try
     }
 
     TestProofFoldStructure(testRoot);
+    TestProofFoldMissingDirectory(testRoot);
     TestUserProfileMigration(testRoot);
 
     Console.WriteLine("Markdown navigation, unresolved state, ProofFold, and profile migration tests passed.");
@@ -175,6 +176,47 @@ static void TestProofFoldStructure(string testRoot)
     }
     Assert(rejectedEscape,
         "ProofFold component paths must not escape the manifest directory.");
+}
+
+static void TestProofFoldMissingDirectory(string testRoot)
+{
+    string root = Path.Combine(testRoot, "proof-fold-missing-directory");
+    string entry = WriteDocument(root, "main.md");
+    string foldsDirectory = Path.Combine(root, "folds");
+    Directory.CreateDirectory(Path.Combine(root, "references"));
+    File.WriteAllText(Path.Combine(root, "notation.yaml"), "version: 1\nsymbols: []\n");
+    WriteProofFoldManifest(root, "folds");
+
+    ProofFoldStructure? empty = ProofFoldStructure.LoadForEntry(entry);
+    Assert(empty is not null && empty.Folds.Count == 0 &&
+        empty.Documents.SequenceEqual([entry]) && empty.Edges.Count == 0 &&
+        empty.TryResolveSourceDocument("main.md", out string resolvedEntry) &&
+        PathsEqual(resolvedEntry, entry) && !Directory.Exists(foldsDirectory),
+        "An entry without a folds directory should open with an empty fold collection.");
+    Assert(empty!.AffectsRenderedDocument(foldsDirectory),
+        "Creating or removing the folds directory should trigger a ProofFold reload.");
+
+    File.AppendAllText(entry, "\n[First](folds/first.md \"fold\")\n");
+    ProofFoldStructure? pending = ProofFoldStructure.LoadForEntry(entry);
+    Assert(pending is not null && pending.Folds.Count == 0 &&
+        pending.Documents.SequenceEqual([entry]) && pending.Edges.Count == 0,
+        "A missing fold target should leave the entry available to read.");
+
+    string firstFold = WriteDocument(root, "folds/first.md");
+    ProofFoldStructure? populated = ProofFoldStructure.LoadForEntry(entry);
+    Assert(populated is not null && populated.Folds.Count == 1 &&
+        populated.Documents.SequenceEqual([entry, firstFold]) &&
+        populated.Edges.SequenceEqual([new ExplorationMapEdge(entry, firstFold, 0)]) &&
+        populated.Fingerprint != empty.Fingerprint,
+        "Adding the first fold should update the render fingerprint and fold map.");
+
+    File.Delete(firstFold);
+    Directory.Delete(foldsDirectory);
+    ProofFoldStructure? removed = ProofFoldStructure.LoadForEntry(entry);
+    Assert(removed is not null && removed.Folds.Count == 0 &&
+        removed.Documents.SequenceEqual([entry]) && removed.Edges.Count == 0 &&
+        removed.Fingerprint == empty.Fingerprint,
+        "Removing the folds directory should restore an entry-only ProofFold document.");
 }
 
 static void WriteProofFoldManifest(string root, string foldsDirectory)

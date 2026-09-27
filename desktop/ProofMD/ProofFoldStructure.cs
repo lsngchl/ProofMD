@@ -108,10 +108,6 @@ internal sealed class ProofFoldStructure
                 RequiredPath(root, "referencesDirectory"),
                 "referencesDirectory");
 
-            if (!Directory.Exists(foldsDirectory))
-            {
-                throw new InvalidDataException("The configured ProofFold folds directory does not exist.");
-            }
             if (!File.Exists(notationRegistryPath))
             {
                 throw new InvalidDataException("The configured ProofFold notation registry does not exist.");
@@ -132,8 +128,10 @@ internal sealed class ProofFoldStructure
                 [entryPath] = ReadSharedText(entryPath),
             };
             var folds = new List<ProofFoldDocument>();
-            foreach (string foldPath in Directory
-                .EnumerateFiles(foldsDirectory, "*", SearchOption.AllDirectories)
+            IEnumerable<string> foldPaths = Directory.Exists(foldsDirectory)
+                ? Directory.EnumerateFiles(foldsDirectory, "*", SearchOption.AllDirectories)
+                : [];
+            foreach (string foldPath in foldPaths
                 .Where(IsMarkdownPath)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
             {

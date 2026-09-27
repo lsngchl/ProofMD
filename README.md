@@ -1,6 +1,6 @@
 # ProofMD Viewer
 
-**Latest release: 2.0.0**
+**Latest release: 2.0.1**
 
 [Download the Windows release](https://github.com/lsngchl/ProofMD/releases/latest)
 
@@ -53,13 +53,12 @@ navigating away from the entry document. Opening a fold or reference file
 directly continues to use ordinary Markdown mode. In ProofFold mode, the app
 brand changes to ProofFold and the map shows every reachable fold immediately
 as a top-down tree rooted at the entry document; it does not use exploration
-state.
+state. The configured folds directory can be absent until the first fold is
+created. The entry remains readable, and adding or removing folds updates the
+document and its map automatically.
 
-The retired LeanMD document-set format has been removed. Its Markdown files open
-as ordinary Markdown. The viewer ignores `.leanmd/` metadata and keeps ordinary
-Markdown exploration maps in memory for the current window session.
-Relative Markdown links, including links titled `"why"` or `"recall"`, navigate
-in the current window.
+Ordinary Markdown exploration maps stay in memory for the current window
+session. Relative Markdown links navigate in the current window.
 
 Run the app feature test suite with:
 
@@ -122,9 +121,17 @@ Administrator privileges are not required.
 
 When upgrading from LeanMD, close the existing app before running the installer.
 ProofMD installs into `%LOCALAPPDATA%\Programs\ProofMD` and replaces the registered
-LeanMD installation and Start Menu shortcut. Existing Markdown default-app
-choices continue to work through compatibility registrations that launch
-`ProofMD.exe`. Other default-app choices remain in place.
+LeanMD installation and Start Menu shortcut. ProofMD appears in Open With and
+Default Apps with its own icon. The installer removes obsolete LeanMD history
+and retains compatibility registrations only for extensions whose Windows
+default choice still references LeanMD. It preserves Windows-owned default
+choices and their hashes, including `UserChoiceLatest`.
+
+To complete the rename of an existing LeanMD default choice, select ProofMD in
+the file's **Open with** dialog and choose **Always**. Reinstalling then retires
+the unused compatibility registrations. Verify an Explorer double-click and the
+file icon after changing the default; a successful direct executable launch
+alone does not verify the Explorer association.
 
 On first launch, ProofMD copies the saved window position and moves the WebView2
 profile from `%LOCALAPPDATA%\LeanMD` to `%LOCALAPPDATA%\ProofMD`. Existing ProofMD
@@ -170,6 +177,6 @@ gh release create $tag "release/ProofMD-$version-win-x64.zip" --verify-tag --dra
 gh release edit $tag --draft=false --latest
 ```
 
-For this version, the tag is `v2.0.0` and the asset is
-`ProofMD-2.0.0-win-x64.zip`. Local release folders remain generated output;
+For this version, the tag is `v2.0.1` and the asset is
+`ProofMD-2.0.1-win-x64.zip`. Local release folders remain generated output;
 GitHub Releases stores the downloadable ZIP alongside the tagged source.
