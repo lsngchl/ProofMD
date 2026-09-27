@@ -684,6 +684,7 @@ a:focus-visible {
   padding-left: 1.6rem;
 }
 
+.markdown-body .document-anchor,
 .markdown-body .footnote-item {
   scroll-margin-top: 80px;
 }

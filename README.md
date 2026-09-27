@@ -39,7 +39,16 @@ installer display version are kept in sync with the latest release shown above.
 - Source-anchored reading-position restoration when navigating back
 - Code spans and fenced code blocks are excluded from math rendering
 - Markdown footnotes with linked references and backreferences
-- Raw HTML in Markdown is disabled
+- Empty HTML anchors (`<a id="section"></a>`) with same-document fragment links
+- Anchor and footnote IDs scoped to each rendered document and fold occurrence
+- Raw HTML remains disabled except for empty, id-only anchors
+
+Use `<a id="descendant-limits"></a>` on its own line or within a paragraph or
+heading, and link to it with `[Descendant limits](#descendant-limits)`. The `id`
+must be nonempty, contain no whitespace, and use single or double quotes. Extra
+attributes and nonempty HTML links remain ordinary text. Anchors inside code
+spans and code blocks stay visible as examples. Fragment links resolve within
+their rendered document, including when the same fold is expanded more than once.
 
 An adjacent `<document>.unresolved` marker records that a document is not yet
 understood. The desktop viewer creates or removes this marker from the document

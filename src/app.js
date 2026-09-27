@@ -71,6 +71,7 @@ const MAP_OVERVIEW_EXIT_ZOOM = 0.48;
 const SOURCE_BLOCK_SELECTOR =
   "[data-source-start-line][data-source-end-line]";
 let renderGeneration = 0;
+let documentRenderInstance = 0;
 let rendererPromise;
 let renderedMapLayout = null;
 let renderedMapGeometry = MAP_NODE_GEOMETRY;
@@ -218,7 +219,10 @@ function replaceProofFoldLink(
       return;
     }
 
-    content.innerHTML = renderMarkdown(fragment.source, { documentId: targetId });
+    content.innerHTML = renderMarkdown(fragment.source, {
+      documentId: targetId,
+      instanceId: ++documentRenderInstance,
+    });
     enhanceRenderedContent(
       content,
       targetId,
@@ -383,7 +387,10 @@ function renderDocument(
   setProductBrand(currentProofFold ? "ProofFold" : "ProofMD");
   setEmptyStateVisible(false);
   const entryId = currentProofFold?.entry ?? null;
-  elements.preview.innerHTML = renderMarkdown(source, { documentId: entryId });
+  elements.preview.innerHTML = renderMarkdown(source, {
+    documentId: entryId,
+    instanceId: ++documentRenderInstance,
+  });
   elements.documentName.textContent = name;
 
   const markdownLinks = enhanceRenderedContent(

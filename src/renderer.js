@@ -1,6 +1,7 @@
 import MarkdownIt from "markdown-it";
 import katex from "katex";
 import footnotePlugin from "markdown-it-footnote";
+import { anchorPlugin } from "./anchor-plugin.js";
 import { mathPlugin } from "./math-plugin.js";
 import { sourceMapPlugin } from "./source-map-plugin.js";
 
@@ -15,17 +16,21 @@ const markdown = new MarkdownIt({
   },
 })
   .use(footnotePlugin)
+  .use(anchorPlugin)
   .use(sourceMapPlugin);
 
-function footnoteDocumentId(documentId) {
-  if (typeof documentId !== "string" || !documentId) return undefined;
-
-  return Array.from(documentId, (character) =>
-    character.codePointAt(0).toString(16),
-  ).join("-");
+function renderDocumentId(documentId, instanceId) {
+  const docId = typeof documentId === "string" && documentId
+    ? Array.from(documentId, (character) =>
+      character.codePointAt(0).toString(16),
+    ).join("-")
+    : undefined;
+  return Number.isSafeInteger(instanceId) && instanceId >= 0
+    ? `${docId ?? "document"}--${instanceId}`
+    : docId;
 }
 
-export function renderMarkdown(source, { documentId } = {}) {
-  const docId = footnoteDocumentId(documentId);
+export function renderMarkdown(source, { documentId, instanceId } = {}) {
+  const docId = renderDocumentId(documentId, instanceId);
   return markdown.render(source, docId ? { docId } : {});
 }

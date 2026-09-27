@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test test/map-layout.test.js test/math-plugin.test.js test/proof-fold.test.js test/theme-storage.test.js"
+    "test": "node --test test/anchor-plugin.test.js test/map-layout.test.js test/math-plugin.test.js test/proof-fold.test.js test/theme-storage.test.js"
   },
   "dependencies": {
     "katex": "^0.16.22",
