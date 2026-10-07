@@ -61,11 +61,13 @@ corepack, so it does not need to be on `PATH`.
 
 - `dotnet build` of the desktop project requires `dist-desktop/` from the web
   build.
-- The end-to-end test opens two real ProofMD windows, which take focus. Run it
-  once before a release or after changing the host, the WebView2 wiring, or
-  `index.html`, and tell the user first. `-ProofFoldDocuments <main.md>...`
-  opens one more window per document; use it sparingly. Check everything else
-  with the window-free tests or the stub-host harness.
+- The end-to-end test sets `PROOFMD_OFFSCREEN=1`, so its two ProofMD windows
+  open beyond every monitor, take no focus, and use a temporary WebView2
+  profile. Run it before a release or after changing the host, the WebView2
+  wiring, or `index.html`. `-ProofFoldDocuments <main.md>...` opens one more
+  window per document. With `-UseFileAssociation`, the installed app must be a
+  build that supports `PROOFMD_OFFSCREEN`, or its windows appear on screen.
+  Launch the app any other way only when necessary, and tell the user first.
 - The installer tests write only under `HKCU\Software\ProofMD.InstallerTests`
   and remove it afterwards.
 - Install the app on this machine only when the user asks.

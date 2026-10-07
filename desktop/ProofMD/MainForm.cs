@@ -11,6 +11,12 @@ internal sealed class MainForm : Form
     private const int UnresolvedDebounceMilliseconds = 150;
     private const int ViewerStartTimeoutMilliseconds = 8000;
     private static readonly HashSet<string> ContextMenuItems = ["copy", "selectAll", "print"];
+    private const int WsExToolWindow = 0x00000080;
+    private const int WsExNoActivate = 0x08000000;
+
+    // Set by the end-to-end test: the window opens beyond every monitor, without a taskbar
+    // button, without taking focus, and without saving its placement.
+    private static readonly bool Offscreen = Environment.GetEnvironmentVariable("PROOFMD_OFFSCREEN") == "1";
 
     private readonly WebView2 _webView;
     private readonly ViewerSession _session;
@@ -29,7 +35,15 @@ internal sealed class MainForm : Form
         ApplyAppIcon();
         // The window stays transparent until the viewer has painted its shell.
         Opacity = 0;
-        ApplyInitialWindowState();
+        if (Offscreen)
+        {
+            StartPosition = FormStartPosition.Manual;
+            Bounds = new Rectangle(SystemInformation.VirtualScreen.Right + 200, SystemInformation.VirtualScreen.Top, 1200, 800);
+        }
+        else
+        {
+            ApplyInitialWindowState();
+        }
         _webView = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = BackColor };
         Controls.Add(_webView);
 
@@ -79,9 +93,17 @@ internal sealed class MainForm : Form
             throw new InvalidOperationException("The installed ProofMD viewer files were not found.");
         }
 
+        // Off screen, WebView2 would treat the window as hidden and stop painting. Its own
+        // profile keeps tests away from the user's settings and from a running ProofMD,
+        // which WebView2 would refuse to share a profile with under different options.
+        var options = new CoreWebView2EnvironmentOptions(
+            Offscreen ? "--disable-features=CalculateNativeWinOcclusion" : null);
         CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
             browserExecutableFolder: null,
-            userDataFolder: Path.Combine(UserProfile.DirectoryPath, "WebView2"));
+            userDataFolder: Offscreen
+                ? Path.Combine(Path.GetTempPath(), "ProofMD-offscreen", "WebView2")
+                : Path.Combine(UserProfile.DirectoryPath, "WebView2"),
+            options);
         await _webView.EnsureCoreWebView2Async(environment);
         CoreWebView2 core = _webView.CoreWebView2;
 
@@ -291,7 +313,7 @@ internal sealed class MainForm : Form
         _windowRevealed = true;
         _viewerStartTimer.Stop();
         Opacity = 1;
-        Activate();
+        if (!Offscreen) Activate();
     }
 
     private void ApplyAppIcon()
@@ -356,9 +378,22 @@ internal sealed class MainForm : Form
         _reloadTimer.Dispose();
         _unresolvedTimer.Dispose();
         _viewerStartTimer.Dispose();
+        if (Offscreen) return;
         WindowStateStore.Save(
             WindowState == FormWindowState.Normal ? Bounds : RestoreBounds,
             maximized: WindowState == FormWindowState.Maximized);
+    }
+
+    protected override bool ShowWithoutActivation => Offscreen;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            CreateParams parameters = base.CreateParams;
+            if (Offscreen) parameters.ExStyle |= WsExToolWindow | WsExNoActivate;
+            return parameters;
+        }
     }
 
     private void ShowStartupError(string message)
