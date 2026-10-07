@@ -1,33 +1,32 @@
 Set-StrictMode -Version Latest
 
+$ProofMDExtensions = @('.md', '.markdown')
+$ProofMDProgId = 'ProofMD.Markdown'
+$ProofMDPayload = @('ProofMD.exe', 'ProofMD.dll', 'Viewer\index.html',
+    'ProofMD.Installation.ps1', 'Uninstall-ProofMD.ps1', 'Uninstall-ProofMD.cmd')
+
 function Get-ProofMDPaths([string]$LocalAppData) {
     $root = [IO.Path]::GetFullPath($LocalAppData)
     [pscustomobject]@{
-        Install = [IO.Path]::GetFullPath((Join-Path $root 'Programs\ProofMD'))
-        LegacyInstall = [IO.Path]::GetFullPath((Join-Path $root 'Programs\LeanMD'))
-        Profile = [IO.Path]::GetFullPath((Join-Path $root 'ProofMD'))
+        Install = Join-Path $root 'Programs\ProofMD'
+        Profile = Join-Path $root 'ProofMD'
     }
 }
 
-function Assert-ProofMDPath([string]$Path, [string]$ExpectedPath) {
-    $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
-    if ($fullPath -ne [IO.Path]::GetFullPath($ExpectedPath).TrimEnd('\')) {
-        throw "Unexpected application path: $fullPath"
-    }
-    for ($directory = $fullPath; $directory; $directory = [IO.Path]::GetDirectoryName($directory)) {
-        if (Test-Path -LiteralPath $directory) {
-            $item = Get-Item -LiteralPath $directory -Force
-            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw "Application paths must not traverse directory links: $directory"
-            }
+# Refuses paths that pass through junctions or symbolic links before anything is copied or deleted.
+function Assert-ProofMDNoLinks([string]$Path) {
+    for ($directory = [IO.Path]::GetFullPath($Path); $directory; $directory = [IO.Path]::GetDirectoryName($directory)) {
+        if ((Test-Path -LiteralPath $directory) -and
+            ((Get-Item -LiteralPath $directory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "ProofMD paths must not pass through directory links: $directory"
         }
     }
 }
 
-function Assert-ProofMDStopped([string[]]$ExecutablePaths) {
-    foreach ($process in @(Get-Process -Name ProofMD, LeanMD -ErrorAction SilentlyContinue)) {
-        if ($ExecutablePaths -contains $process.Path) {
-            throw 'Close ProofMD and LeanMD before installing or removing the app.'
+function Assert-ProofMDStopped([string]$ExecutablePath) {
+    foreach ($process in @(Get-Process -Name ProofMD -ErrorAction SilentlyContinue)) {
+        if ($process.Path -eq $ExecutablePath) {
+            throw 'Close ProofMD before installing or removing it.'
         }
     }
 }
@@ -47,9 +46,15 @@ function Get-ProofMDRegistryValue($RegistryRoot, [string]$Path, [string]$Name = 
     finally { $key.Close() }
 }
 
-function Test-ProofMDCommand($RegistryRoot, [string]$Class, [string]$ExecutablePath) {
-    $command = Get-ProofMDRegistryValue $RegistryRoot "Software\Classes\$Class\shell\open\command"
-    return $command -eq ('"{0}" "%1"' -f $ExecutablePath)
+function Remove-ProofMDRegistryValue($RegistryRoot, [string]$Path, [string]$Name) {
+    $key = $RegistryRoot.OpenSubKey($Path, $true)
+    if ($null -eq $key) { return }
+    try { $key.DeleteValue($Name, $false) }
+    finally { $key.Close() }
+}
+
+function Get-ProofMDOpenCommand([string]$ExecutablePath) {
+    return '"{0}" "%1"' -f $ExecutablePath
 }
 
 function Set-ProofMDFileClass($RegistryRoot, [string]$Class, [string]$ExecutablePath) {
@@ -59,276 +64,120 @@ function Set-ProofMDFileClass($RegistryRoot, [string]$Class, [string]$Executable
         FriendlyTypeName = 'Markdown Document'
         FriendlyAppName = 'ProofMD'
     }
-    $key = $RegistryRoot.OpenSubKey($path, $true)
-    try { $key.DeleteValue('NoOpenWith', $false) }
-    finally { $key.Close() }
-    Set-ProofMDRegistryValues $RegistryRoot "$path\DefaultIcon" @{
-        '' = ('"{0}",0' -f $ExecutablePath)
-    }
-    Set-ProofMDRegistryValues $RegistryRoot "$path\shell\open\command" @{
-        '' = ('"{0}" "%1"' -f $ExecutablePath)
-    }
+    Set-ProofMDRegistryValues $RegistryRoot "$path\DefaultIcon" @{ '' = ('"{0}",0' -f $ExecutablePath) }
+    Set-ProofMDRegistryValues $RegistryRoot "$path\shell\open\command" @{ '' = (Get-ProofMDOpenCommand $ExecutablePath) }
 }
 
-function Get-ProofMDUserChoice($RegistryRoot, [string]$Extension) {
-    $path = "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$Extension"
-    $choice = Get-ProofMDRegistryValue $RegistryRoot "$path\UserChoiceLatest\ProgId" 'ProgId'
-    if (-not $choice) { $choice = Get-ProofMDRegistryValue $RegistryRoot "$path\UserChoice" 'ProgId' }
-    return $choice
-}
-
-function Test-ProofMDLegacyCapabilitiesOwner($RegistryRoot, [string[]]$OwnedClasses) {
-    $registeredPath = Get-ProofMDRegistryValue $RegistryRoot 'Software\RegisteredApplications' 'LeanMD'
-    if ($registeredPath -and $registeredPath -ne 'Software\LeanMD\Capabilities') { return $false }
-    $classes = @(foreach ($extension in @('.md', '.markdown')) {
-        $class = Get-ProofMDRegistryValue $RegistryRoot 'Software\LeanMD\Capabilities\FileAssociations' $extension
-        if ($class) { $class }
-    })
-    if ($classes.Count -eq 0) { return $OwnedClasses -contains 'LeanMD.Markdown' }
-    return @($classes | Where-Object { $OwnedClasses -notcontains $_ }).Count -eq 0
-}
-
-function Set-ProofMDCapabilities(
-    $RegistryRoot, [string]$Application, [hashtable]$Associations, [string]$ExecutablePath
-) {
-    $path = "Software\$Application\Capabilities"
-    Set-ProofMDRegistryValues $RegistryRoot $path @{
-        ApplicationDescription = 'A lightweight local Markdown and LaTeX viewer.'
-        ApplicationIcon = ('"{0}",0' -f $ExecutablePath)
-    }
-    $key = $RegistryRoot.OpenSubKey($path, $true)
-    try {
-        if ($Application -eq 'ProofMD') {
-            $key.SetValue('ApplicationName', 'ProofMD')
-            $key.DeleteValue('Hidden', $false)
-        }
-        else {
-            # Keep only the identity still referenced by a Windows default choice.
-            # Omit ApplicationName so Windows obtains ProofMD's name from its exe;
-            # an explicit name must match the RegisteredApplications value name.
-            $key.DeleteValue('ApplicationName', $false)
-            $key.SetValue('Hidden', 1, [Microsoft.Win32.RegistryValueKind]::DWord)
-        }
-    }
-    finally { $key.Close() }
-    $key = $RegistryRoot.CreateSubKey("$path\FileAssociations")
-    try {
-        foreach ($extension in @('.md', '.markdown')) {
-            if ($Associations.ContainsKey($extension)) { $key.SetValue($extension, $Associations[$extension]) }
-            else { $key.DeleteValue($extension, $false) }
-        }
-    }
-    finally { $key.Close() }
-    Set-ProofMDRegistryValues $RegistryRoot 'Software\RegisteredApplications' @{
-        $Application = "Software\$Application\Capabilities"
-    }
-}
-
-function Remove-ProofMDLegacyHistory($RegistryRoot, [string]$LegacyExecutablePath) {
-    foreach ($extension in @('.md', '.markdown')) {
-        $path = "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension\OpenWithList"
-        $key = $RegistryRoot.OpenSubKey($path, $true)
-        if ($null -eq $key) { continue }
-        try {
-            $mru = [string]$key.GetValue('MRUList', '')
-            foreach ($name in $key.GetValueNames()) {
-                if ($name.Length -eq 1 -and $key.GetValue($name) -eq 'LeanMD.exe') {
-                    $key.DeleteValue($name, $false)
-                    $mru = $mru.Replace($name, '')
-                }
-            }
-            if ($key.GetValueNames() -contains 'MRUList') { $key.SetValue('MRUList', $mru) }
-        }
-        finally { $key.Close() }
-    }
-    $key = $RegistryRoot.OpenSubKey('Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache', $true)
-    if ($null -ne $key) {
-        try {
-            foreach ($suffix in @('.FriendlyAppName', '.ApplicationCompany')) {
-                $key.DeleteValue($LegacyExecutablePath + $suffix, $false)
-            }
-        }
-        finally { $key.Close() }
-    }
-}
-
-function Register-ProofMD($RegistryRoot, [string]$InstallDirectory, [string]$LegacyInstallDirectory) {
+# Registers ProofMD as an available handler without changing the user's default app.
+function Register-ProofMD($RegistryRoot, [string]$InstallDirectory) {
     $executable = Join-Path $InstallDirectory 'ProofMD.exe'
-    $legacyExecutable = Join-Path $LegacyInstallDirectory 'LeanMD.exe'
-    Set-ProofMDFileClass $RegistryRoot 'ProofMD.Markdown' $executable
+    $version = [string](Get-Item -LiteralPath $executable).VersionInfo.ProductVersion
+
+    Set-ProofMDFileClass $RegistryRoot $ProofMDProgId $executable
     Set-ProofMDFileClass $RegistryRoot 'Applications\ProofMD.exe' $executable
-    Set-ProofMDRegistryValues $RegistryRoot 'Software\Classes\Applications\ProofMD.exe\SupportedTypes' @{
-        '.md' = ''
-        '.markdown' = ''
+    $supportedTypes = @{}
+    foreach ($extension in $ProofMDExtensions) {
+        $supportedTypes[$extension] = ''
+        $key = $RegistryRoot.CreateSubKey("Software\Classes\$extension\OpenWithProgids")
+        try { $key.SetValue($ProofMDProgId, [byte[]]@(), [Microsoft.Win32.RegistryValueKind]::None) }
+        finally { $key.Close() }
+    }
+    Set-ProofMDRegistryValues $RegistryRoot 'Software\Classes\Applications\ProofMD.exe\SupportedTypes' $supportedTypes
+
+    Set-ProofMDRegistryValues $RegistryRoot 'Software\ProofMD\Capabilities' @{
+        ApplicationName = 'ProofMD'
+        ApplicationDescription = 'A local Markdown viewer with LaTeX mathematics.'
+        ApplicationIcon = ('"{0}",0' -f $executable)
+    }
+    $associations = @{}
+    foreach ($extension in $ProofMDExtensions) { $associations[$extension] = $ProofMDProgId }
+    Set-ProofMDRegistryValues $RegistryRoot 'Software\ProofMD\Capabilities\FileAssociations' $associations
+    Set-ProofMDRegistryValues $RegistryRoot 'Software\RegisteredApplications' @{
+        ProofMD = 'Software\ProofMD\Capabilities'
     }
 
-    $choices = @{}
-    foreach ($extension in @('.md', '.markdown')) {
-        $choices[$extension] = Get-ProofMDUserChoice $RegistryRoot $extension
-    }
-    $ownedLegacyClasses = @()
-    foreach ($legacyClass in @('LeanMD.Markdown', 'Applications\LeanMD.exe')) {
-        if ((Test-ProofMDCommand $RegistryRoot $legacyClass $legacyExecutable) -or
-            (Test-ProofMDCommand $RegistryRoot $legacyClass $executable)) {
-            $ownedLegacyClasses += $legacyClass
-            if ($choices.Values -contains $legacyClass) {
-                Set-ProofMDFileClass $RegistryRoot $legacyClass $executable
-                if ($legacyClass -eq 'Applications\LeanMD.exe') {
-                    $key = $RegistryRoot.CreateSubKey("Software\Classes\$legacyClass\SupportedTypes")
-                    try {
-                        foreach ($extension in @('.md', '.markdown')) {
-                            if ($choices[$extension] -eq $legacyClass) { $key.SetValue($extension, '') }
-                            else { $key.DeleteValue($extension, $false) }
-                        }
-                    }
-                    finally { $key.Close() }
-                }
-            }
-            else { $RegistryRoot.DeleteSubKeyTree("Software\Classes\$legacyClass", $false) }
-        }
-    }
-
-    foreach ($extension in @('.md', '.markdown')) {
-        $classPath = "Software\Classes\$extension\OpenWithProgids"
-        $historyPath = "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension\OpenWithProgids"
-        foreach ($path in @($classPath, $historyPath)) {
-            $key = if ($path -eq $classPath) { $RegistryRoot.CreateSubKey($path) } else { $RegistryRoot.OpenSubKey($path, $true) }
-            if ($null -eq $key) { continue }
-            try {
-                foreach ($legacyClass in $ownedLegacyClasses) {
-                    if ($choices[$extension] -eq $legacyClass) {
-                        $key.SetValue($legacyClass, [byte[]]@(), [Microsoft.Win32.RegistryValueKind]::None)
-                    }
-                    else { $key.DeleteValue($legacyClass, $false) }
-                }
-                if ($path -eq $classPath) {
-                    $key.SetValue('ProofMD.Markdown', [byte[]]@(), [Microsoft.Win32.RegistryValueKind]::None)
-                }
-            }
-            finally { $key.Close() }
-        }
-    }
-
-    Set-ProofMDCapabilities $RegistryRoot 'ProofMD' @{ '.md' = 'ProofMD.Markdown'; '.markdown' = 'ProofMD.Markdown' } $executable
-    if (Test-ProofMDLegacyCapabilitiesOwner $RegistryRoot $ownedLegacyClasses) {
-        $legacyAssociations = @{}
-        foreach ($extension in @('.md', '.markdown')) {
-            if ($ownedLegacyClasses -contains $choices[$extension]) { $legacyAssociations[$extension] = $choices[$extension] }
-        }
-        if ($legacyAssociations.Count -gt 0) {
-            Set-ProofMDCapabilities $RegistryRoot 'LeanMD' $legacyAssociations $executable
-        }
-        else {
-            $RegistryRoot.DeleteSubKeyTree('Software\LeanMD\Capabilities', $false)
-            $key = $RegistryRoot.OpenSubKey('Software\RegisteredApplications', $true)
-            if ($null -ne $key) {
-                try { $key.DeleteValue('LeanMD', $false) }
-                finally { $key.Close() }
-            }
-        }
-    }
-    if ($ownedLegacyClasses -contains 'Applications\LeanMD.exe') {
-        Remove-ProofMDLegacyHistory $RegistryRoot $legacyExecutable
-    }
     Set-ProofMDRegistryValues $RegistryRoot 'Software\Microsoft\Windows\CurrentVersion\Uninstall\ProofMD' @{
         DisplayName = 'ProofMD'
-        DisplayVersion = '2.0.2'
+        DisplayVersion = $version
         Publisher = 'ProofMD'
         InstallLocation = $InstallDirectory
         DisplayIcon = $executable
-        UninstallString = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{0}"' -f
-            (Join-Path $InstallDirectory 'Uninstall-ProofMD.ps1'))
+        UninstallString = ('"{0}"' -f (Join-Path $InstallDirectory 'Uninstall-ProofMD.cmd'))
         NoModify = 1
         NoRepair = 1
     }
 }
 
 function Remove-ProofMDRegistration($RegistryRoot, [string]$InstallDirectory) {
-    $executable = Join-Path $InstallDirectory 'ProofMD.exe'
-    $ownedLegacyClasses = @(foreach ($class in @('LeanMD.Markdown', 'Applications\LeanMD.exe')) {
-        if (Test-ProofMDCommand $RegistryRoot $class $executable) { $class }
-    })
-    $ownsLegacyRegistration = Test-ProofMDLegacyCapabilitiesOwner $RegistryRoot $ownedLegacyClasses
-    foreach ($class in @('ProofMD.Markdown', 'Applications\ProofMD.exe', 'LeanMD.Markdown', 'Applications\LeanMD.exe')) {
-        if (Test-ProofMDCommand $RegistryRoot $class $executable) {
+    $command = Get-ProofMDOpenCommand (Join-Path $InstallDirectory 'ProofMD.exe')
+    # Windows creates the *_auto_file classes when ProofMD is picked through Open with > Browse.
+    $classes = @($ProofMDProgId, 'Applications\ProofMD.exe') +
+        @($ProofMDExtensions | ForEach-Object { '{0}_auto_file' -f $_.TrimStart('.') })
+    foreach ($class in $classes) {
+        if ((Get-ProofMDRegistryValue $RegistryRoot "Software\Classes\$class\shell\open\command") -eq $command) {
             $RegistryRoot.DeleteSubKeyTree("Software\Classes\$class", $false)
-            foreach ($extension in @('.md', '.markdown')) {
-                foreach ($path in @("Software\Classes\$extension\OpenWithProgids",
-                    "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension\OpenWithProgids")) {
-                    $key = $RegistryRoot.OpenSubKey($path, $true)
-                    if ($null -ne $key) {
-                        try { $key.DeleteValue($class, $false) }
-                        finally { $key.Close() }
-                    }
-                }
-            }
         }
     }
+    foreach ($extension in $ProofMDExtensions) {
+        Remove-ProofMDRegistryValue $RegistryRoot "Software\Classes\$extension\OpenWithProgids" $ProofMDProgId
+    }
+    Remove-ProofMDRegistryValue $RegistryRoot 'Software\RegisteredApplications' 'ProofMD'
     $RegistryRoot.DeleteSubKeyTree('Software\ProofMD', $false)
     $RegistryRoot.DeleteSubKeyTree('Software\Microsoft\Windows\CurrentVersion\Uninstall\ProofMD', $false)
-    if ($ownsLegacyRegistration) {
-        $RegistryRoot.DeleteSubKeyTree('Software\LeanMD\Capabilities', $false)
-    }
-    $key = $RegistryRoot.OpenSubKey('Software\RegisteredApplications', $true)
-    if ($null -ne $key) {
-        try {
-            $key.DeleteValue('ProofMD', $false)
-            if ($ownsLegacyRegistration) { $key.DeleteValue('LeanMD', $false) }
-        }
-        finally { $key.Close() }
-    }
 }
 
+# Copies the release into a sibling folder first, then swaps it in, so files from an
+# older version never survive an upgrade and a failed copy leaves the old install intact.
 function Install-ProofMD(
     [string]$SourceDirectory,
     [string]$LocalAppData,
     [string]$ProgramsDirectory,
     $RegistryRoot
 ) {
-    $source = [IO.Path]::GetFullPath($SourceDirectory)
-    $paths = Get-ProofMDPaths $LocalAppData
-    Assert-ProofMDPath $paths.Install (Join-Path $LocalAppData 'Programs\ProofMD')
-    Assert-ProofMDPath $paths.LegacyInstall (Join-Path $LocalAppData 'Programs\LeanMD')
-    $executable = Join-Path $paths.Install 'ProofMD.exe'
-    $legacyExecutable = Join-Path $paths.LegacyInstall 'LeanMD.exe'
-    Assert-ProofMDStopped @($executable, $legacyExecutable)
-    foreach ($required in @('ProofMD.exe', 'ProofMD.dll', 'Viewer\index.html',
-        'Install-ProofMD.ps1', 'Uninstall-ProofMD.ps1', 'ProofMD.Installation.ps1')) {
+    $source = [IO.Path]::GetFullPath($SourceDirectory).TrimEnd('\')
+    $install = (Get-ProofMDPaths $LocalAppData).Install
+    $executable = Join-Path $install 'ProofMD.exe'
+    Assert-ProofMDNoLinks $install
+    Assert-ProofMDStopped $executable
+    foreach ($required in $ProofMDPayload) {
         if (-not (Test-Path -LiteralPath (Join-Path $source $required) -PathType Leaf)) {
             throw "Incomplete ProofMD release: $required was not found in $source"
         }
     }
 
-    if ($source.TrimEnd('\') -ne $paths.Install) {
-        New-Item -ItemType Directory -Path $paths.Install -Force | Out-Null
-        Get-ChildItem -LiteralPath $source -Force | ForEach-Object {
-            Copy-Item -LiteralPath $_.FullName -Destination $paths.Install -Recurse -Force
+    if ($source -ne $install) {
+        $staging = "$install.new"
+        $previous = "$install.old"
+        foreach ($leftover in @($staging, $previous)) {
+            if (Test-Path -LiteralPath $leftover) { Remove-Item -LiteralPath $leftover -Recurse -Force }
         }
+        New-Item -ItemType Directory -Path $staging -Force | Out-Null
+        Get-ChildItem -LiteralPath $source -Force | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination $staging -Recurse -Force
+        }
+        if (Test-Path -LiteralPath $install) { Move-Item -LiteralPath $install -Destination $previous }
+        Move-Item -LiteralPath $staging -Destination $install
+        if (Test-Path -LiteralPath $previous) { Remove-Item -LiteralPath $previous -Recurse -Force }
     }
 
-    Register-ProofMD $RegistryRoot $paths.Install $paths.LegacyInstall
+    Register-ProofMD $RegistryRoot $install
     New-Item -ItemType Directory -Path $ProgramsDirectory -Force | Out-Null
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut((Join-Path $ProgramsDirectory 'ProofMD.lnk'))
+    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $ProgramsDirectory 'ProofMD.lnk'))
     $shortcut.TargetPath = $executable
-    $shortcut.WorkingDirectory = $paths.Install
+    $shortcut.WorkingDirectory = $install
     $shortcut.IconLocation = ('{0},0' -f $executable)
     $shortcut.Description = 'ProofMD Markdown Viewer'
     $shortcut.Save()
+}
 
-    $legacyLocation = Get-ProofMDRegistryValue $RegistryRoot 'Software\Microsoft\Windows\CurrentVersion\Uninstall\LeanMD' 'InstallLocation'
-    if ($legacyLocation -and [IO.Path]::GetFullPath($legacyLocation).TrimEnd('\') -eq $paths.LegacyInstall) {
-        $RegistryRoot.DeleteSubKeyTree('Software\Microsoft\Windows\CurrentVersion\Uninstall\LeanMD', $false)
-        $legacyShortcut = Join-Path $ProgramsDirectory 'LeanMD.lnk'
-        if ((Test-Path -LiteralPath $legacyShortcut) -and
-            $shell.CreateShortcut($legacyShortcut).TargetPath -eq $legacyExecutable) {
-            Remove-Item -LiteralPath $legacyShortcut -Force
-        }
-        if ((Test-Path -LiteralPath $paths.LegacyInstall) -and
-            $source -ne $paths.LegacyInstall -and
-            -not $source.StartsWith($paths.LegacyInstall + '\', [StringComparison]::OrdinalIgnoreCase)) {
-            Assert-ProofMDPath $paths.LegacyInstall (Join-Path $LocalAppData 'Programs\LeanMD')
-            Remove-Item -LiteralPath $paths.LegacyInstall -Recurse -Force
+# Removes a folder, retrying while WebView2 helper processes release their file handles.
+function Remove-ProofMDDirectory([string]$Path) {
+    Assert-ProofMDNoLinks $Path
+    for ($attempt = 1; Test-Path -LiteralPath $Path; $attempt++) {
+        try { Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop }
+        catch {
+            if ($attempt -ge 20) { throw }
+            Start-Sleep -Milliseconds 500
         }
     }
 }

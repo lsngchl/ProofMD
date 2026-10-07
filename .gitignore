@@ -1,6 +1,5 @@
 node_modules/
 .pnpm-store/
-.agents/
 dist-desktop/
 .vite/
 *.log
@@ -9,4 +8,3 @@ desktop/**/obj/
 test/**/bin/
 test/**/obj/
 release/
-desktop/ProofMD/Assets/ProofMD.png

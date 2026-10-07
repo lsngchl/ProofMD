@@ -7,9 +7,10 @@ internal static class UnresolvedStateStore
     internal const string SidecarExtension = ".unresolved";
     private const string MarkerContents = "status: unresolved\n";
 
+    // Appends to the full file name so that x.md and x.markdown keep separate markers.
     public static string SidecarPath(string markdownPath)
     {
-        return Path.ChangeExtension(Path.GetFullPath(markdownPath), SidecarExtension);
+        return Path.GetFullPath(markdownPath) + SidecarExtension;
     }
 
     public static bool IsUnresolved(string markdownPath)

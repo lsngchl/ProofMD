@@ -7,18 +7,14 @@ namespace ProofMD;
 
 internal sealed class MainForm : Form
 {
-    // Keep the original origin so migrated WebView2 local storage remains readable.
-    private const string ViewerHostName = "leanmd.local";
+    private const string ViewerHostName = "proofmd.example";
     private const int MarkdownReloadDebounceMilliseconds = 250;
-    private const int WslFileStatePollIntervalMilliseconds = 750;
     private const int MarkdownReadRetryCount = 4;
     private const int MarkdownReadRetryDelayMilliseconds = 100;
     private const int UnresolvedStateReloadDebounceMilliseconds = 150;
     private string? _markdownPath;
-    private string? _lastMarkdownDirectory;
     private readonly WebView2 _webView;
     private readonly System.Windows.Forms.Timer _markdownReloadTimer;
-    private readonly System.Windows.Forms.Timer _wslFileStatePollTimer;
     private readonly System.Windows.Forms.Timer _unresolvedStateReloadTimer;
     private readonly List<string> _mapNodes = [];
     private readonly List<ExplorationMapEdge> _mapEdges = [];
@@ -32,12 +28,9 @@ internal sealed class MainForm : Form
     private FileSystemWatcher? _proofFoldWatcher;
     private ProofFoldStructure? _proofFoldStructure;
     private string? _lastRenderedSource;
-    private string? _unresolvedStateFingerprint;
     private int _documentContextId;
-    private bool _formIsClosing;
     private bool _initialContentSent;
     private bool _windowRevealed;
-    private bool _wslFileStatePollInProgress;
 
     private enum OpenReason
     {
@@ -56,9 +49,6 @@ internal sealed class MainForm : Form
     public MainForm(string? markdownPath)
     {
         _markdownPath = markdownPath;
-        _lastMarkdownDirectory = markdownPath is null
-            ? null
-            : Path.GetDirectoryName(markdownPath);
         Text = "ProofMD";
         MinimumSize = new Size(720, 540);
         BackColor = Color.FromArgb(243, 241, 236);
@@ -68,7 +58,6 @@ internal sealed class MainForm : Form
         _webView = new WebView2
         {
             Dock = DockStyle.Fill,
-            AllowExternalDrop = true,
             DefaultBackgroundColor = BackColor,
         };
         _markdownReloadTimer = new System.Windows.Forms.Timer
@@ -76,11 +65,6 @@ internal sealed class MainForm : Form
             Interval = MarkdownReloadDebounceMilliseconds,
         };
         _markdownReloadTimer.Tick += OnMarkdownReloadTimerTick;
-        _wslFileStatePollTimer = new System.Windows.Forms.Timer
-        {
-            Interval = WslFileStatePollIntervalMilliseconds,
-        };
-        _wslFileStatePollTimer.Tick += OnWslFileStatePollTimerTick;
         _unresolvedStateReloadTimer = new System.Windows.Forms.Timer
         {
             Interval = UnresolvedStateReloadDebounceMilliseconds,
@@ -157,8 +141,6 @@ internal sealed class MainForm : Form
         core.Settings.AreDevToolsEnabled = false;
         core.Settings.AreDefaultScriptDialogsEnabled = false;
         core.Settings.IsStatusBarEnabled = false;
-        core.Settings.IsZoomControlEnabled = true;
-        core.Settings.IsWebMessageEnabled = true;
         core.WebMessageReceived += OnWebMessageReceived;
 
         core.NewWindowRequested += (_, eventArgs) =>
@@ -169,8 +151,6 @@ internal sealed class MainForm : Form
 
         core.NavigationStarting += (_, eventArgs) =>
         {
-            if (eventArgs.Uri.Equals("about:blank", StringComparison.OrdinalIgnoreCase)) return;
-
             if (Uri.TryCreate(eventArgs.Uri, UriKind.Absolute, out Uri? uri) &&
                 uri.Scheme == Uri.UriSchemeHttps &&
                 uri.Host.Equals(ViewerHostName, StringComparison.OrdinalIgnoreCase))
@@ -315,7 +295,7 @@ internal sealed class MainForm : Form
         };
 
         string? currentDirectory = _markdownPath is null
-            ? _lastMarkdownDirectory
+            ? null
             : Path.GetDirectoryName(_markdownPath);
         if (currentDirectory is not null && Directory.Exists(currentDirectory))
         {
@@ -363,7 +343,6 @@ internal sealed class MainForm : Form
             ProofFoldStructure? proofFoldStructure =
                 ProofFoldStructure.TryLoadForEntry(markdownPath);
             _markdownPath = markdownPath;
-            _lastMarkdownDirectory = Path.GetDirectoryName(markdownPath);
             _initialMarkdownReadTask = null;
             _lastRenderedSource = source;
             ConfigureMarkdownWatcher(markdownPath);
@@ -849,12 +828,6 @@ internal sealed class MainForm : Form
         string? directory = Path.GetDirectoryName(markdownPath);
         if (directory is null || !Directory.Exists(directory)) return;
 
-        if (IsWslPath(markdownPath))
-        {
-            _wslFileStatePollTimer.Start();
-            return;
-        }
-
         var watcher = new FileSystemWatcher(directory)
         {
             IncludeSubdirectories = false,
@@ -876,9 +849,7 @@ internal sealed class MainForm : Form
     {
         DisposeProofFoldWatcher();
         _proofFoldStructure = structure;
-        if (structure is null ||
-            !Directory.Exists(structure.RootDirectory) ||
-            IsWslPath(structure.RootDirectory))
+        if (structure is null || !Directory.Exists(structure.RootDirectory))
         {
             return;
         }
@@ -986,49 +957,6 @@ internal sealed class MainForm : Form
         await ReloadCurrentMarkdownAsync();
     }
 
-    private async void OnWslFileStatePollTimerTick(object? sender, EventArgs eventArgs)
-    {
-        if (_formIsClosing || _wslFileStatePollInProgress) return;
-
-        _wslFileStatePollInProgress = true;
-        try
-        {
-            await ReloadCurrentMarkdownAsync();
-            await PollWslUnresolvedStatesAsync();
-        }
-        finally
-        {
-            _wslFileStatePollInProgress = false;
-        }
-    }
-
-    private async Task PollWslUnresolvedStatesAsync()
-    {
-        int contextId = _documentContextId;
-        var pathsToCheck = new List<string>(_mapNodes);
-        if (_markdownPath is not null)
-        {
-            pathsToCheck.Add(_markdownPath);
-        }
-        string[] documentPaths = pathsToCheck
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        string fingerprint = await Task.Run(() => string.Join(
-            "\n",
-            documentPaths.Where(UnresolvedStateStore.IsUnresolved)));
-        if (_formIsClosing ||
-            contextId != _documentContextId ||
-            fingerprint == _unresolvedStateFingerprint)
-        {
-            return;
-        }
-
-        _unresolvedStateFingerprint = fingerprint;
-        PublishCurrentDocumentUnresolvedState();
-        PublishMapState();
-    }
-
     private async Task ReloadCurrentMarkdownAsync()
     {
         string? markdownPath = _markdownPath;
@@ -1077,7 +1005,7 @@ internal sealed class MainForm : Form
                 return;
             }
             catch (Exception exception) when (
-                exception is IOException or UnauthorizedAccessException or InvalidDataException)
+                exception is IOException or UnauthorizedAccessException)
             {
                 if (attempt == MarkdownReadRetryCount - 1) return;
                 await Task.Delay(MarkdownReadRetryDelayMilliseconds * (attempt + 1));
@@ -1113,28 +1041,9 @@ internal sealed class MainForm : Form
         }
     }
 
-    private static bool IsWslPath(string path)
-    {
-        try
-        {
-            string fullPath = Path.GetFullPath(path);
-            return fullPath.StartsWith(
-                    @"\\wsl$\",
-                    StringComparison.OrdinalIgnoreCase) ||
-                fullPath.StartsWith(
-                    @"\\wsl.localhost\",
-                    StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     private void DisposeMarkdownWatcher()
     {
         _markdownReloadTimer.Stop();
-        _wslFileStatePollTimer.Stop();
         _markdownWatcher?.Dispose();
         _markdownWatcher = null;
     }
@@ -1282,11 +1191,9 @@ internal sealed class MainForm : Form
 
     private void OnFormClosing(object? sender, FormClosingEventArgs eventArgs)
     {
-        _formIsClosing = true;
         DisposeMarkdownWatcher();
         DisposeProofFoldWatcher();
         _markdownReloadTimer.Dispose();
-        _wslFileStatePollTimer.Dispose();
         _unresolvedStateReloadTimer.Stop();
         _unresolvedStateReloadTimer.Dispose();
 

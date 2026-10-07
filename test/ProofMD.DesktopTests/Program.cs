@@ -16,8 +16,11 @@ try
         "Ordinary Markdown documents should open without a format manifest.");
 
     string unresolvedSidecar = UnresolvedStateStore.SidecarPath(branchA);
-    Assert(unresolvedSidecar == Path.ChangeExtension(branchA, ".unresolved"),
-        "The unresolved marker should replace the Markdown extension.");
+    Assert(unresolvedSidecar == branchA + ".unresolved",
+        "The unresolved marker should extend the full Markdown file name.");
+    string siblingMarkdown = Path.ChangeExtension(branchA, ".markdown");
+    Assert(UnresolvedStateStore.SidecarPath(siblingMarkdown) != unresolvedSidecar,
+        "Documents that differ only in extension should keep separate markers.");
     Assert(!UnresolvedStateStore.IsUnresolved(branchA),
         "A document without a marker should start resolved.");
     UnresolvedStateStore.SetUnresolved(branchA, unresolved: true);
@@ -70,45 +73,12 @@ try
     TestProofFoldMissingDirectory(testRoot);
     TestProofFoldOptionalComponents(testRoot);
     TestProofFoldRecovery(testRoot);
-    TestUserProfileMigration(testRoot);
 
-    Console.WriteLine("Markdown navigation, unresolved state, ProofFold, and profile migration tests passed.");
+    Console.WriteLine("Markdown navigation, unresolved state, and ProofFold tests passed.");
 }
 finally
 {
     if (Directory.Exists(testRoot)) Directory.Delete(testRoot, recursive: true);
-}
-
-static void TestUserProfileMigration(string testRoot)
-{
-    string localAppData = Path.Combine(testRoot, "profiles");
-    string legacy = Path.Combine(localAppData, "LeanMD");
-    string current = Path.Combine(localAppData, "ProofMD");
-    UserProfile.Migrate(localAppData);
-    Assert(!Directory.Exists(current), "A fresh launch should not fabricate legacy settings.");
-
-    string legacyStorage = Path.Combine(legacy, "WebView2", "Default", "Local Storage");
-    Directory.CreateDirectory(legacyStorage);
-    File.WriteAllText(Path.Combine(legacy, "window-state.json"), """{"Width":1200,"Height":800}""");
-    File.WriteAllText(Path.Combine(legacyStorage, "theme"), "dark");
-    Assert(UserProfile.NeedsWebViewMigration(localAppData), "An existing WebView2 profile should be migrated.");
-    UserProfile.Migrate(localAppData);
-    Assert(File.ReadAllText(Path.Combine(current, "window-state.json")) ==
-        File.ReadAllText(Path.Combine(legacy, "window-state.json")),
-        "The first ProofMD launch should copy the saved window position.");
-    Assert(File.ReadAllText(Path.Combine(current, "WebView2", "Default", "Local Storage", "theme")) == "dark" &&
-        !Directory.Exists(Path.Combine(legacy, "WebView2")),
-        "The complete WebView2 profile should move together, preserving origin storage.");
-
-    File.WriteAllText(Path.Combine(current, "window-state.json"), "new-window-state");
-    Directory.CreateDirectory(legacyStorage);
-    File.WriteAllText(Path.Combine(legacyStorage, "theme"), "light");
-    UserProfile.Migrate(localAppData);
-    Assert(File.ReadAllText(Path.Combine(current, "window-state.json")) == "new-window-state" &&
-        File.ReadAllText(Path.Combine(current, "WebView2", "Default", "Local Storage", "theme")) == "dark",
-        "Repeated launches should retain existing ProofMD settings.");
-    Assert(File.Exists(Path.Combine(legacyStorage, "theme")),
-        "A newer ProofMD profile should leave any remaining legacy profile intact.");
 }
 
 static void TestProofFoldStructure(string testRoot)

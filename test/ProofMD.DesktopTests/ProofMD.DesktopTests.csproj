@@ -7,7 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\desktop\ProofMD\UserProfile.cs" Link="UserProfile.cs" />
     <Compile Include="..\..\desktop\ProofMD\DocumentNavigationState.cs" Link="DocumentNavigationState.cs" />
     <Compile Include="..\..\desktop\ProofMD\ExplorationMapEdge.cs" Link="ExplorationMapEdge.cs" />
     <Compile Include="..\..\desktop\ProofMD\ProofFoldStructure.cs" Link="ProofFoldStructure.cs" />

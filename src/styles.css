@@ -72,13 +72,11 @@ input {
   font: inherit;
 }
 
-button,
-label {
+button {
   -webkit-tap-highlight-color: transparent;
 }
 
 button:focus-visible,
-label:focus-within,
 a:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
   outline-offset: 3px;
@@ -136,10 +134,6 @@ a:focus-visible {
 .open-button {
   border: 0;
   cursor: pointer;
-}
-
-.quiet-button,
-.open-button {
   min-height: 38px;
   padding: 9px 14px;
   border-radius: 10px;
@@ -157,7 +151,6 @@ a:focus-visible {
 }
 
 .quiet-button:disabled,
-.map-action-button:disabled,
 .map-reset-button:disabled {
   cursor: default;
   opacity: 0.42;
@@ -190,10 +183,6 @@ a:focus-visible {
   border-radius: 14px;
   background: var(--surface);
   box-shadow: 0 20px 60px rgb(0 0 0 / 18%);
-}
-
-.key-guide[hidden] {
-  display: none !important;
 }
 
 .key-guide-header {
@@ -650,10 +639,6 @@ a:focus-visible {
   background: color-mix(in srgb, var(--accent) 18%, var(--accent-soft));
 }
 
-.proof-fold-collapse-button[hidden] {
-  display: none;
-}
-
 .markdown-body .footnote-ref {
   margin-left: 0.08em;
   font-family: ui-sans-serif, system-ui, sans-serif;
@@ -942,7 +927,7 @@ a:focus-visible {
   font-weight: 720;
 }
 
-.map-action-button:hover:not(:disabled) {
+.map-action-button:hover {
   border-color: var(--line-strong);
   background: var(--accent-soft);
 }
@@ -1004,8 +989,6 @@ a:focus-visible {
   position: absolute;
   top: 0;
   left: 0;
-  width: 220px;
-  height: 72px;
 }
 
 .map-node-shell.is-current {
@@ -1182,7 +1165,6 @@ a:focus-visible {
     0 14px 34px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
-.map-surface.is-overview .map-node.is-previous::after,
 .map-surface.is-overview .map-node.is-unresolved::before {
   content: none;
 }

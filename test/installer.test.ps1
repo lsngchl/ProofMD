@@ -10,16 +10,16 @@ function Assert([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 
-function Test-RegistryValue($Registry, [string]$Path, [string]$Name) {
-    $key = $Registry.OpenSubKey($Path)
-    if ($null -eq $key) { return $false }
-    try { return $key.GetValueNames() -contains $Name }
-    finally { $key.Close() }
+function Assert-Throws([scriptblock]$Action, [string]$Message) {
+    $threw = $false
+    try { & $Action } catch { $threw = $true }
+    Assert $threw $Message
 }
 
 $testId = [Guid]::NewGuid().ToString('N')
-$testRoot = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) "ProofMD-installer-tests-$testId"))
-$registryPath = "Software\ProofMD.InstallerTests\$testId"
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) "ProofMD-installer-tests-$testId"
+$registryParent = 'Software\ProofMD.InstallerTests'
+$registryPath = "$registryParent\$testId"
 $registry = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($registryPath)
 
 try {
@@ -27,205 +27,91 @@ try {
         $tokens = $null
         $parseErrors = $null
         [void][Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$parseErrors)
-        Assert ($parseErrors.Count -eq 0) "Invalid installer syntax: $($script.Name): $parseErrors"
+        Assert ($parseErrors.Count -eq 0) "Invalid installer syntax in $($script.Name): $parseErrors"
     }
 
+    # A release folder whose executable carries real version information.
     $source = Join-Path $testRoot 'release'
-    $localAppData = Join-Path $testRoot 'Local'
-    $programs = Join-Path $testRoot 'Start Menu'
     New-Item -ItemType Directory -Path (Join-Path $source 'Viewer') -Force | Out-Null
-    foreach ($file in @('ProofMD.exe', 'ProofMD.dll', 'Viewer\index.html')) {
+    Copy-Item -LiteralPath (Join-Path $PSHOME 'powershell.exe') -Destination (Join-Path $source 'ProofMD.exe')
+    foreach ($file in @('ProofMD.dll', 'Viewer\index.html')) {
         [IO.File]::WriteAllText((Join-Path $source $file), 'installer test fixture')
     }
-    Get-ChildItem -LiteralPath $installerDirectory -File | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination $source
-    }
+    Get-ChildItem -LiteralPath $installerDirectory -File | Copy-Item -Destination $source
+    $localAppData = Join-Path $testRoot 'Local'
+    $programs = Join-Path $testRoot 'Start Menu'
     $paths = Get-ProofMDPaths $localAppData
     $executable = Join-Path $paths.Install 'ProofMD.exe'
-    $legacyExecutable = Join-Path $paths.LegacyInstall 'LeanMD.exe'
+    $command = Get-ProofMDOpenCommand $executable
+    $uninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\ProofMD'
 
     Install-ProofMD $source $localAppData $programs $registry
-    Assert (Test-Path -LiteralPath $executable) 'Fresh installation should copy ProofMD.exe.'
-    Assert (Test-ProofMDCommand $registry 'ProofMD.Markdown' $executable) 'The Markdown class should launch ProofMD.'
-    Assert ((Get-ProofMDRegistryValue $registry 'Software\RegisteredApplications' 'ProofMD') -eq
-        'Software\ProofMD\Capabilities') 'ProofMD should be registered in Default Apps.'
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\Classes\LeanMD.Markdown')) 'Fresh installs should not create legacy aliases.'
-    $shell = New-Object -ComObject WScript.Shell
-    Assert ($shell.CreateShortcut((Join-Path $programs 'ProofMD.lnk')).TargetPath -eq $executable) 'The Start Menu shortcut should target ProofMD.exe.'
-    Assert ($shell.CreateShortcut((Join-Path $programs 'ProofMD.lnk')).IconLocation -eq "$executable,0") 'The Start Menu shortcut should have an explicit ProofMD icon.'
-    Assert ((Get-ProofMDRegistryValue $registry 'Software\ProofMD\Capabilities' 'ApplicationIcon') -eq
-        ('"{0}",0' -f $executable)) 'Default Apps should have an explicit ProofMD icon.'
-
-    New-Item -ItemType Directory -Path $paths.LegacyInstall -Force | Out-Null
-    [IO.File]::WriteAllText($legacyExecutable, 'legacy executable fixture')
-    Set-ProofMDRegistryValues $registry 'Software\Microsoft\Windows\CurrentVersion\Uninstall\LeanMD' @{
-        InstallLocation = $paths.LegacyInstall
-    }
-    Set-ProofMDRegistryValues $registry 'Software\RegisteredApplications' @{ LeanMD = 'Software\LeanMD\Capabilities' }
-    Set-ProofMDRegistryValues $registry 'Software\LeanMD\Capabilities' @{ ApplicationName = 'LeanMD' }
-    Set-ProofMDRegistryValues $registry 'Software\LeanMD\Capabilities\FileAssociations' @{
-        '.md' = 'LeanMD.Markdown'
-        '.markdown' = 'LeanMD.Markdown'
-    }
-    Set-ProofMDFileClass $registry 'LeanMD.Markdown' $legacyExecutable
-    Set-ProofMDFileClass $registry 'Applications\LeanMD.exe' $legacyExecutable
-    $legacyShortcut = $shell.CreateShortcut((Join-Path $programs 'LeanMD.lnk'))
-    $legacyShortcut.TargetPath = $legacyExecutable
-    $legacyShortcut.Save()
-    $legacyProfile = Join-Path $localAppData 'LeanMD'
-    New-Item -ItemType Directory -Path (Join-Path $legacyProfile 'WebView2') -Force | Out-Null
-    [IO.File]::WriteAllText((Join-Path $legacyProfile 'window-state.json'), 'legacy window state')
-    foreach ($extension in @('.md', '.markdown')) {
-        Set-ProofMDRegistryValues $registry "Software\Classes\$extension\OpenWithProgids" @{ 'LeanMD.Markdown' = '' }
-        Set-ProofMDRegistryValues $registry "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension\OpenWithProgids" @{
-            'LeanMD.Markdown' = ''; 'Applications\LeanMD.exe' = ''; 'OtherEditor.Markdown' = ''
-        }
-        Set-ProofMDRegistryValues $registry "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension\OpenWithList" @{
-            a = 'Code.exe'; b = 'LeanMD.exe'; c = 'ProofMD.exe'; MRUList = 'cba'
-        }
-        $defaultClass = if ($extension -eq '.md') { 'LeanMD.Markdown' } else { 'Applications\LeanMD.exe' }
-        Set-ProofMDRegistryValues $registry "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension\UserChoice" @{
-            ProgId = $defaultClass
-            Hash = 'preserve-this-Windows-owned-value'
-        }
-        Set-ProofMDRegistryValues $registry "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension\UserChoiceLatest\ProgId" @{
-            ProgId = $defaultClass
-            Hash = 'preserve-the-current-Windows-choice'
-        }
-    }
-    $muiPath = 'Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache'
-    Set-ProofMDRegistryValues $registry $muiPath @{
-        ($legacyExecutable + '.FriendlyAppName') = 'LeanMD'
-        ($legacyExecutable + '.ApplicationCompany') = 'LeanMD'
-        ('C:\another-install\LeanMD.exe.FriendlyAppName') = 'Keep this name'
-    }
-
-    Install-ProofMD $source $localAppData $programs $registry
-    Assert (-not (Test-Path -LiteralPath $paths.LegacyInstall)) 'Upgrade should remove the registered legacy installation.'
-    Assert (-not (Test-Path -LiteralPath (Join-Path $programs 'LeanMD.lnk'))) 'Upgrade should remove the old shortcut.'
-    Assert (Test-Path -LiteralPath (Join-Path $legacyProfile 'window-state.json')) 'Installer should retain legacy settings for first-launch migration.'
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\Microsoft\Windows\CurrentVersion\Uninstall\LeanMD' 'InstallLocation')) 'Upgrade should retire the old uninstall entry.'
-    Assert ((Get-ProofMDRegistryValue $registry 'Software\RegisteredApplications' 'LeanMD') -eq
-        'Software\LeanMD\Capabilities') 'Upgrade should preserve the registered identity used by the existing default app.'
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\LeanMD\Capabilities' 'ApplicationName')) 'The compatibility identity should derive its display name from ProofMD.exe.'
-    Assert ((Get-ProofMDRegistryValue $registry 'Software\LeanMD\Capabilities' 'Hidden') -eq 1) 'Only ProofMD should be advertised in Default Apps.'
-    foreach ($class in @('LeanMD.Markdown', 'Applications\LeanMD.exe')) {
-        Assert (Test-ProofMDCommand $registry $class $executable) "Existing defaults should launch ProofMD through $class."
-        Assert ($null -eq (Get-ProofMDRegistryValue $registry "Software\Classes\$class" 'NoOpenWith')) 'The selected default must remain available to the Shell.'
-        Assert ((Get-ProofMDRegistryValue $registry "Software\Classes\$class\DefaultIcon") -eq
-            ('"{0}",0' -f $executable)) 'Existing default icons should resolve to ProofMD.exe.'
+    Assert (Test-Path -LiteralPath $executable) 'Installing should copy ProofMD.exe.'
+    foreach ($class in @('ProofMD.Markdown', 'Applications\ProofMD.exe')) {
+        Assert ((Get-ProofMDRegistryValue $registry "Software\Classes\$class\shell\open\command") -eq $command) "$class should open ProofMD."
     }
     foreach ($extension in @('.md', '.markdown')) {
-        $choice = "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension\UserChoice"
-        $expectedClass = if ($extension -eq '.md') { 'LeanMD.Markdown' } else { 'Applications\LeanMD.exe' }
-        Assert ((Get-ProofMDRegistryValue $registry $choice 'ProgId') -eq $expectedClass) 'Upgrade should preserve the default app ProgID.'
-        Assert ((Get-ProofMDRegistryValue $registry $choice 'Hash') -eq 'preserve-this-Windows-owned-value') 'Upgrade should preserve the default app hash.'
-        $latestChoice = "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension\UserChoiceLatest\ProgId"
-        Assert ((Get-ProofMDRegistryValue $registry $latestChoice 'ProgId') -eq $expectedClass) 'Upgrade should preserve UserChoiceLatest.'
-        Assert ((Get-ProofMDRegistryValue $registry $latestChoice 'Hash') -eq 'preserve-the-current-Windows-choice') 'Upgrade should preserve the current Windows choice hash.'
-        Assert ((Get-ProofMDRegistryValue $registry 'Software\LeanMD\Capabilities\FileAssociations' $extension) -eq
-            $expectedClass) 'The compatibility app should retain only the selected ProgID for each extension.'
-        Assert ((Test-RegistryValue $registry 'Software\Classes\Applications\LeanMD.exe\SupportedTypes' $extension) -eq
-            ($expectedClass -eq 'Applications\LeanMD.exe')) 'The compatibility executable should support only extensions that still select it.'
         $key = $registry.OpenSubKey("Software\Classes\$extension\OpenWithProgids")
-        try {
-            Assert ($key.GetValueNames() -contains $expectedClass) 'Keep the selected legacy ProgID available in Open With.'
-            Assert ($key.GetValueNames() -contains 'ProofMD.Markdown') 'Open With should also include ProofMD.'
-        }
+        try { Assert ($key.GetValueNames() -contains 'ProofMD.Markdown') "ProofMD should be offered in Open with for $extension." }
         finally { $key.Close() }
-        $history = "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension"
-        Assert ($null -eq (Get-ProofMDRegistryValue $registry "$history\OpenWithList" 'b')) 'Remove the obsolete executable from Open With history.'
-        Assert ((Get-ProofMDRegistryValue $registry "$history\OpenWithList" 'MRUList') -eq 'ca') 'Preserve other applications and their history order.'
-        Assert (Test-RegistryValue $registry "$history\OpenWithProgids" 'OtherEditor.Markdown') 'Preserve other applications in Open With.'
     }
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry $muiPath ($legacyExecutable + '.FriendlyAppName'))) 'Remove the stale name cached for the replaced executable.'
-    Assert ((Get-ProofMDRegistryValue $registry $muiPath 'C:\another-install\LeanMD.exe.FriendlyAppName') -eq 'Keep this name') 'Preserve caches belonging to a different installation.'
+    Assert ((Get-ProofMDRegistryValue $registry 'Software\RegisteredApplications' 'ProofMD') -eq 'Software\ProofMD\Capabilities') 'ProofMD should appear in Default Apps.'
+    Assert ((Get-ProofMDRegistryValue $registry $uninstallKey 'DisplayVersion') -eq (Get-Item -LiteralPath $executable).VersionInfo.ProductVersion) 'Installed apps should show the executable version.'
+    Assert ((Get-ProofMDRegistryValue $registry $uninstallKey 'UninstallString') -eq ('"{0}"' -f (Join-Path $paths.Install 'Uninstall-ProofMD.cmd'))) 'Settings should run the pausing uninstall wrapper.'
+    $shell = New-Object -ComObject WScript.Shell
+    Assert ($shell.CreateShortcut((Join-Path $programs 'ProofMD.lnk')).TargetPath -eq $executable) 'The Start Menu shortcut should open ProofMD.'
 
-    # Repair the incomplete compatibility registration left by the first 2.0.0 installer,
-    # after it has already removed the old installation and uninstall registration.
-    $registry.DeleteSubKeyTree('Software\LeanMD', $false)
-    $key = $registry.OpenSubKey('Software\RegisteredApplications', $true)
-    try { $key.DeleteValue('LeanMD', $false) }
-    finally { $key.Close() }
-    foreach ($class in @('LeanMD.Markdown', 'Applications\LeanMD.exe')) {
-        Set-ProofMDRegistryValues $registry "Software\Classes\$class" @{ NoOpenWith = '' }
-    }
-    Install-ProofMD $source $localAppData $programs $registry
-    Assert ((Get-ProofMDRegistryValue $registry 'Software\RegisteredApplications' 'LeanMD') -eq
-        'Software\LeanMD\Capabilities') 'Repair should restore the old registered identity even after its uninstall entry is gone.'
-    Assert ((Get-ProofMDRegistryValue $registry 'Software\LeanMD\Capabilities\FileAssociations' '.md') -eq
-        'LeanMD.Markdown') 'Repair should restore the capabilities needed for Shell execution.'
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\Classes\LeanMD.Markdown' 'NoOpenWith')) 'Repair should remove the legacy default exclusion.'
-
+    [IO.File]::WriteAllText((Join-Path $paths.Install 'stale-from-old-version.txt'), 'stale')
     New-Item -ItemType Directory -Path $paths.Profile -Force | Out-Null
-    [IO.File]::WriteAllText((Join-Path $paths.Profile 'window-state.json'), 'new ProofMD preference')
+    [IO.File]::WriteAllText((Join-Path $paths.Profile 'window-state.json'), '{}')
     Install-ProofMD $source $localAppData $programs $registry
-    Assert ([IO.File]::ReadAllText((Join-Path $paths.Profile 'window-state.json')) -eq 'new ProofMD preference') 'Reinstall should preserve ProofMD settings.'
+    Assert (-not (Test-Path -LiteralPath (Join-Path $paths.Install 'stale-from-old-version.txt'))) 'Upgrading should not keep files from the previous version.'
+    Assert (-not (Test-Path -LiteralPath "$($paths.Install).new") -and -not (Test-Path -LiteralPath "$($paths.Install).old")) 'Upgrading should not leave staging folders.'
+    Assert (Test-Path -LiteralPath (Join-Path $paths.Profile 'window-state.json')) 'Upgrading should keep the user profile.'
 
-    $otherExecutable = Join-Path $testRoot 'separate-install\LeanMD.exe'
-    Set-ProofMDFileClass $registry 'LeanMD.Markdown' $otherExecutable
+    Set-ProofMDRegistryValues $registry 'Software\Classes\md_auto_file\shell\open\command' @{ '' = $command }
+    Set-ProofMDRegistryValues $registry 'Software\Classes\markdown_auto_file\shell\open\command' @{ '' = '"C:\Other\Editor.exe" "%1"' }
+    $key = $registry.CreateSubKey('Software\Classes\.md\OpenWithProgids')
+    try { $key.SetValue('Other.Markdown', [byte[]]@(), [Microsoft.Win32.RegistryValueKind]::None) }
+    finally { $key.Close() }
     Remove-ProofMDRegistration $registry $paths.Install
-    Assert (-not (Test-ProofMDCommand $registry 'ProofMD.Markdown' $executable)) 'Uninstall should remove ProofMD registration.'
-    Assert (-not (Test-ProofMDCommand $registry 'Applications\LeanMD.exe' $executable)) 'Uninstall should remove its compatibility registration.'
-    Assert (Test-ProofMDCommand $registry 'LeanMD.Markdown' $otherExecutable) 'Uninstall should preserve a legacy registration now owned by another installation.'
-    Assert ((Get-ProofMDRegistryValue $registry 'Software\RegisteredApplications' 'LeanMD') -eq
-        'Software\LeanMD\Capabilities') 'Uninstall should preserve capabilities when another installation owns the legacy class.'
-
-    Set-ProofMDFileClass $registry 'LeanMD.Markdown' $executable
-    Set-ProofMDFileClass $registry 'Applications\LeanMD.exe' $executable
-    Install-ProofMD $source $localAppData $programs $registry
-    Remove-ProofMDRegistration $registry $paths.Install
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\RegisteredApplications' 'LeanMD')) 'Uninstall should remove its own compatibility app registration.'
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\LeanMD\Capabilities' 'ApplicationName')) 'Uninstall should remove its own compatibility capabilities.'
-
-    # Windows has accepted a new .md choice while an old .markdown choice remains.
-    # UserChoiceLatest takes precedence over stale UserChoice, and reinstall must
-    # not advertise the unselected alias again.
-    Set-ProofMDFileClass $registry 'LeanMD.Markdown' $executable
-    Set-ProofMDFileClass $registry 'Applications\LeanMD.exe' $executable
-    $mdChoice = 'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.md\UserChoiceLatest\ProgId'
-    Set-ProofMDRegistryValues $registry $mdChoice @{ ProgId = 'Applications\ProofMD.exe' }
-    Install-ProofMD $source $localAppData $programs $registry
-    Assert ((Get-ProofMDRegistryValue $registry $mdChoice 'ProgId') -eq 'Applications\ProofMD.exe') 'Preserve the user-selected ProofMD app.'
-    Assert ((Get-ProofMDRegistryValue $registry $mdChoice 'Hash') -eq 'preserve-the-current-Windows-choice') 'Never rewrite the Windows choice hash.'
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\Classes\LeanMD.Markdown')) 'Retire a legacy class after its last selected extension has migrated.'
-    Assert (Test-ProofMDCommand $registry 'Applications\LeanMD.exe' $executable) 'Keep the class still selected for .markdown.'
-    foreach ($path in @('Software\Classes\.md\OpenWithProgids',
-        'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.md\OpenWithProgids')) {
-        Assert (-not (Test-RegistryValue $registry $path 'LeanMD.Markdown')) 'Remove the unselected legacy Markdown candidate.'
-        Assert (-not (Test-RegistryValue $registry $path 'Applications\LeanMD.exe')) 'Remove the unselected legacy executable candidate.'
+    foreach ($class in @('ProofMD.Markdown', 'Applications\ProofMD.exe', 'md_auto_file')) {
+        Assert ($null -eq $registry.OpenSubKey("Software\Classes\$class")) "Uninstalling should remove $class."
     }
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\LeanMD\Capabilities\FileAssociations' '.md')) 'Stop advertising the legacy app for migrated extensions.'
-    Install-ProofMD $source $localAppData $programs $registry
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\Classes\LeanMD.Markdown')) 'Reinstall must not resurrect an unselected alias.'
-
-    Set-ProofMDRegistryValues $registry 'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.markdown\UserChoiceLatest\ProgId' @{
-        ProgId = 'OtherEditor.Markdown'
+    Assert ($null -ne $registry.OpenSubKey('Software\Classes\markdown_auto_file')) 'Uninstalling must keep classes that open another app.'
+    $key = $registry.OpenSubKey('Software\Classes\.md\OpenWithProgids')
+    try {
+        Assert ($key.GetValueNames() -notcontains 'ProofMD.Markdown') 'Uninstalling should remove ProofMD from Open with.'
+        Assert ($key.GetValueNames() -contains 'Other.Markdown') 'Uninstalling must keep other apps in Open with.'
     }
-    Install-ProofMD $source $localAppData $programs $registry
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\Classes\Applications\LeanMD.exe')) 'Retire the final unused legacy class.'
-    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\RegisteredApplications' 'LeanMD')) 'Retire capabilities when the last legacy choice is replaced.'
-    Assert ((Get-ProofMDUserChoice $registry '.markdown') -eq 'OtherEditor.Markdown') 'Preserve another application selected by the user.'
-    Remove-ProofMDRegistration $registry $paths.Install
+    finally { $key.Close() }
+    Assert ($null -eq $registry.OpenSubKey($uninstallKey)) 'Uninstalling should remove the Installed apps entry.'
+    Assert ($null -eq (Get-ProofMDRegistryValue $registry 'Software\RegisteredApplications' 'ProofMD')) 'Uninstalling should remove ProofMD from Default Apps.'
 
     $incomplete = Join-Path $testRoot 'incomplete'
     New-Item -ItemType Directory -Path $incomplete | Out-Null
-    $rejected = $false
-    try { Install-ProofMD $incomplete $localAppData $programs $registry }
-    catch { $rejected = $true }
-    Assert $rejected 'An incomplete release should fail before changing app registration.'
-    Assert (-not (Test-ProofMDCommand $registry 'ProofMD.Markdown' $executable)) 'Failed installation should not register missing files.'
-    $rejected = $false
-    try { Assert-ProofMDPath $localAppData $paths.Install }
-    catch { $rejected = $true }
-    Assert $rejected 'Cleanup validation should reject paths outside the exact app directory.'
+    Assert-Throws { Install-ProofMD $incomplete $localAppData $programs $registry } 'An incomplete release should be rejected.'
+    Assert ($null -eq $registry.OpenSubKey('Software\Classes\ProofMD.Markdown')) 'A rejected release should not register anything.'
 
-    Write-Host 'ProofMD installer tests passed: fresh install, upgrade, default-app compatibility, settings, reinstall, uninstall, and path validation.'
+    $linkTarget = Join-Path $testRoot 'link-target'
+    $linkedLocalAppData = Join-Path $testRoot 'linked'
+    New-Item -ItemType Directory -Path $linkTarget | Out-Null
+    New-Item -ItemType Junction -Path $linkedLocalAppData -Target $linkTarget | Out-Null
+    Assert-Throws { Install-ProofMD $source $linkedLocalAppData $programs $registry } 'Installing through a directory link should be rejected.'
+    (Get-Item -LiteralPath $linkedLocalAppData).Delete()
+
+    Write-Host 'ProofMD installer tests passed.'
 }
 finally {
     $registry.Close()
-    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($registryPath, $false)
-    $expectedRoot = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) "ProofMD-installer-tests-$testId"))
-    Assert-ProofMDPath $testRoot $expectedRoot
-    if (Test-Path -LiteralPath $testRoot) { Remove-Item -LiteralPath $testRoot -Recurse -Force }
+    $parent = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($registryParent, $true)
+    if ($null -ne $parent) {
+        try {
+            $parent.DeleteSubKeyTree($testId, $false)
+            $empty = $parent.SubKeyCount -eq 0 -and $parent.ValueCount -eq 0
+        }
+        finally { $parent.Close() }
+        if ($empty) { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey($registryParent, $false) }
+    }
+    if (Test-Path -LiteralPath $testRoot) { Remove-ProofMDDirectory $testRoot }
 }

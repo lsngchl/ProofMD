@@ -5,31 +5,28 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ProofMD.Installation.ps1')
 
-$localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
-$paths = Get-ProofMDPaths $localAppData
-Assert-ProofMDPath $paths.Install (Join-Path $localAppData 'Programs\ProofMD')
-Assert-ProofMDPath $paths.Profile (Join-Path $localAppData 'ProofMD')
-Assert-ProofMDStopped @((Join-Path $paths.Install 'ProofMD.exe'))
+$paths = Get-ProofMDPaths ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData))
+Assert-ProofMDStopped (Join-Path $paths.Install 'ProofMD.exe')
 
 if ($Cleanup) {
-    Start-Sleep -Milliseconds 750
-    foreach ($target in @($paths.Install, $paths.Profile)) {
-        Assert-ProofMDPath $target $target
-        if (Test-Path -LiteralPath $target) {
-            Remove-Item -LiteralPath $target -Recurse -Force
-        }
+    # Runs hidden after the visible uninstaller exits, because files of a running script's
+    # folder cannot all be removed by that script.
+    try {
+        foreach ($target in @($paths.Install, $paths.Profile)) { Remove-ProofMDDirectory $target }
+    }
+    catch {
+        Add-Type -AssemblyName System.Windows.Forms
+        [void][System.Windows.Forms.MessageBox]::Show(
+            "ProofMD was unregistered, but some files could not be removed.`n`n$($_.Exception.Message)",
+            'ProofMD')
     }
     return
 }
 
 Remove-ProofMDRegistration ([Microsoft.Win32.Registry]::CurrentUser) $paths.Install
-$programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-$shortcutPath = Join-Path $programs 'ProofMD.lnk'
-if (Test-Path -LiteralPath $shortcutPath) {
-    Remove-Item -LiteralPath $shortcutPath -Force
-}
+$shortcut = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)) 'ProofMD.lnk'
+if (Test-Path -LiteralPath $shortcut) { Remove-Item -LiteralPath $shortcut -Force }
 Send-ProofMDShellNotification
-Start-Process powershell.exe -ArgumentList @(
-    '-NoProfile', '-ExecutionPolicy', 'Bypass',
-    '-File', ('"{0}"' -f $PSCommandPath), '-Cleanup') -WindowStyle Hidden
-Write-Host 'ProofMD was unregistered and will be removed.'
+Start-Process powershell.exe -WindowStyle Hidden -WorkingDirectory ([IO.Path]::GetTempPath()) -ArgumentList @(
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"{0}"' -f $PSCommandPath), '-Cleanup')
+Write-Host 'ProofMD was unregistered. Its files are being removed.'

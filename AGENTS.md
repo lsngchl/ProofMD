@@ -1,55 +1,64 @@
-# Repository agent instructions
+# Agent rules for ProofMD
 
-## Windows-first repository tooling
+## Scope
 
-Treat the Windows environment as authoritative for this repository. It builds,
-tests, packages, and releases a Windows desktop application from a working tree
-on the Windows filesystem.
+- ProofMD is a Windows-only app: a WinForms host (`desktop/ProofMD/`) runs the
+  web viewer (`index.html`, `src/`) in WebView2. The viewer has no browser mode;
+  it requires `window.chrome.webview`.
+- Build, test, install, and release only on Windows. On other machines, limit
+  work to reading and editing files.
+- The viewer is served from the virtual host `proofmd.example`, mapped to the
+  app's `Viewer` folder. Markdown never reaches the host page except as text
+  rendered by markdown-it with raw HTML disabled.
 
-- Run dependency installation, Node package scripts, automated tests, Vite
-  asset builds, .NET restore/build/publish commands, installer operations, and
-  release commands with Windows executables and Windows working-tree paths.
-- Do not try the WSL version of a project tool first. WSL utilities may be used
-  for read-only inspection, searching, and file editing, but not as the runtime
-  used to test or build the application.
-- A Windows process launched from WSL may inherit WSL's process `PATH` instead
-  of the user `PATH` assembled by Windows. If a Windows tool does not resolve by
-  name, use its full Windows installation path rather than falling back to the
-  WSL tool. In particular, use `C:\Program Files\nodejs\npm.cmd` for npm and
-  `C:\Program Files\dotnet\dotnet.exe` for .NET when necessary.
+## Commands
 
-## Windows Git
+Run from the repository root. pnpm is pinned in `package.json` and runs through
+corepack, so it does not need to be on `PATH`.
 
-Use Windows Git for every Git operation in this repository. The working tree
-is stored on the Windows filesystem and is used to develop and release a
-Windows desktop application. When operating from WSL, invoke
-`/mnt/c/Program Files/Git/cmd/git.exe` with `-C` and the Windows form of the
-working-tree path (`C:/...`, not `/mnt/c/...`) instead of invoking WSL's
-`/usr/bin/git` against this working tree.
+| Purpose | Command |
+|---|---|
+| Install web dependencies | `corepack pnpm install --frozen-lockfile` |
+| Web tests | `corepack pnpm test` |
+| Build viewer assets into `dist-desktop/` | `corepack pnpm build` |
+| Desktop tests | `dotnet run --project test/ProofMD.DesktopTests/ProofMD.DesktopTests.csproj` |
+| Installer tests | `powershell -NoProfile -ExecutionPolicy Bypass -File test/installer.test.ps1` |
+| End-to-end rendering | `powershell -NoProfile -ExecutionPolicy Bypass -File test/desktop-rendering.test.ps1 -ApplicationPath <ProofMD.exe>` |
+| Release build | `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Build-Release.ps1 [-Archive \| -Local]` |
 
-## Latest release in README
+- `dotnet build` of the desktop project requires `dist-desktop/` from the web
+  build.
+- The end-to-end test opens real ProofMD windows for a few seconds. Pass
+  `-ProofFoldDocuments <main.md>...` to also render real ProofFold documents.
+- The installer tests write only under `HKCU\Software\ProofMD.InstallerTests`
+  and remove it afterwards.
+- Install the app on this machine only when the user asks.
 
-Keep the latest stable release version near the top of the root `README.md` in the `**Latest release: <version>**` line.
-Whenever the stable release version changes, update that line as part of the same change and keep it consistent with the tracked package, executable, manifest, and installer versions.
-Record only stable release versions in this line; do not record test, development, preview, nightly, release-candidate, or other non-production build versions.
+## Versions and releases
 
-## Tagged releases from 2.0.0
+- `<Version>` in `desktop/ProofMD/ProofMD.csproj` is the only version number.
+  The installer reads it from the executable. `README.md` names the latest
+  stable release in its `**Latest release: <version>**` line; update that line
+  only when a stable release is published.
+- A release request means: raise `<Version>` and the README line, write
+  `release-notes/<version>.md` (changes and installation requirements), commit,
+  run `scripts/Build-Release.ps1 -Archive` on the clean commit, then:
 
-Starting with 2.0.0, a request to release a version means preparing its source
-commit, an annotated `v<version>` Git tag, and a GitHub Release with the Windows
-x64 ZIP attached. Follow the release procedure in `README.md`, including the
-version checks, tests, and tracked `release-notes/<version>.md` file.
+  ```powershell
+  $version = '<version>'
+  git tag -a "v$version" -m "ProofMD $version"
+  git push --atomic origin HEAD:main "v$version"
+  gh release create "v$version" "release/ProofMD-$version-win-x64.zip" --verify-tag --draft --title "ProofMD $version" --notes-file "release-notes/$version.md"
+  gh release edit "v$version" --draft=false --latest
+  ```
 
-Build with `scripts/Build-Release.ps1 -Archive` on Windows. It regenerates the
-gitignored `release/ProofMD-<version>/` folder and its ZIP. Every build step is
-fail-fast: a failed web build must stop before `dotnet publish`. Remove only the
-exact target-version output folder after validating its absolute path.
+- Check the draft's tag and asset before publishing it. Never move a published
+  tag.
+- `-Local` builds the working tree as `<version>-local` (shown in Installed
+  apps) for trying changes on this machine; it is never published.
 
-Commit the release source before creating its tag, and publish the branch and
-tag together. Never move an already published release tag. Upload the ZIP to a
-draft GitHub Release, verify its tag and asset, then publish the release.
-Authenticated `gh` commands must run in the normal Windows environment.
+## ProofFold
 
-An explicitly local-only build skips tags, pushes, and GitHub publishing. Update
-the app installed on this machine only when the user requests installation.
-Checksums and additional distribution formats require an explicit request.
+`DocumentFormats/ProofFold/AGENTS.md` holds the authoring rules for ProofFold
+documents and the template folder. Viewer behavior for ProofFold is described in
+`README.md`.

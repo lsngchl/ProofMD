@@ -4,6 +4,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-ProofMD.ps
 if errorlevel 1 (
   echo.
   echo ProofMD installation failed.
-  pause
 )
+echo.
+pause
 endlocal

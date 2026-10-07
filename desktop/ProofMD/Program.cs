@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace ProofMD;
 
 internal static class Program
@@ -8,49 +6,21 @@ internal static class Program
     private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        Application.Run(new MainForm(ParseMarkdownPath(args)));
+    }
+
+    private static string? ParseMarkdownPath(string[] args)
+    {
+        if (args.Length == 0 || string.IsNullOrWhiteSpace(args[0])) return null;
 
         try
         {
-            string localAppData = Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData);
-            if (UserProfile.NeedsWebViewMigration(localAppData))
-            {
-                Process[] legacyProcesses = Process.GetProcessesByName("LeanMD");
-                bool legacyAppRunning = legacyProcesses.Length > 0;
-                foreach (Process process in legacyProcesses) process.Dispose();
-                if (legacyAppRunning)
-                {
-                    throw new IOException("Close LeanMD, then reopen ProofMD to transfer your settings.");
-                }
-            }
-            UserProfile.Migrate(localAppData);
+            return Path.GetFullPath(args[0]);
         }
         catch (Exception exception) when (
-            exception is IOException or UnauthorizedAccessException)
+            exception is ArgumentException or NotSupportedException or PathTooLongException)
         {
-            MessageBox.Show(
-                $"Your LeanMD settings could not be transferred. Close LeanMD and try again.\n\n{exception.Message}",
-                "ProofMD",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-            return;
+            return null;
         }
-
-        string? markdownPath = args.FirstOrDefault(argument =>
-            !string.IsNullOrWhiteSpace(argument) && !argument.StartsWith("--", StringComparison.Ordinal));
-
-        if (markdownPath is not null)
-        {
-            try
-            {
-                markdownPath = Path.GetFullPath(markdownPath.Trim('"'));
-            }
-            catch
-            {
-                markdownPath = null;
-            }
-        }
-
-        Application.Run(new MainForm(markdownPath));
     }
 }

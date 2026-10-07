@@ -19,7 +19,6 @@ export const PROOF_FOLD_MAP_GEOMETRY = Object.freeze({
   minimumWidth: 640,
   minimumHeight: 620,
   orientation: "vertical",
-  edgeStyle: "branch",
 });
 
 const DEFAULT_MAXIMUM_UNFOLDED_NODES = 50_000;
@@ -484,46 +483,13 @@ export function routeExplorationMapEdges(edges, layout, options = {}) {
     const sourceEdges = outgoing.get(edge.from);
     const targetEdges = incoming.get(edge.to);
     if (isVertical) {
-      if (settings.edgeStyle === "branch") {
-        const sourceX = source.x + settings.nodeWidth / 2;
-        const targetX = target.x + settings.nodeWidth / 2;
-        const isForward = target.y > source.y;
-        const sourceY = isForward ? source.y + settings.nodeHeight : source.y;
-        const targetY = isForward ? target.y : target.y + settings.nodeHeight;
-        const branchY = (sourceY + targetY) / 2;
-
-        return {
-          edge,
-          sourceX,
-          targetX,
-          sourceY,
-          targetY,
-          path: `M ${sourceX} ${sourceY} V ${branchY} H ${targetX} V ${targetY}`,
-        };
-      }
-
-      const sourceX =
-        source.x +
-        settings.nodeWidth / 2 +
-        distributedOffset(
-          sourceEdges.indexOf(edge),
-          sourceEdges.length,
-          settings.nodeWidth,
-        );
-      const targetX =
-        target.x +
-        settings.nodeWidth / 2 +
-        distributedOffset(
-          targetEdges.indexOf(edge),
-          targetEdges.length,
-          settings.nodeWidth,
-        );
+      // Vertical maps draw orthogonal branches from the bottom of the parent.
+      const sourceX = source.x + settings.nodeWidth / 2;
+      const targetX = target.x + settings.nodeWidth / 2;
       const isForward = target.y > source.y;
       const sourceY = isForward ? source.y + settings.nodeHeight : source.y;
       const targetY = isForward ? target.y : target.y + settings.nodeHeight;
-      const curve = Math.max(36, Math.abs(targetY - sourceY) * 0.45);
-      const firstControlY = isForward ? sourceY + curve : sourceY - curve;
-      const secondControlY = isForward ? targetY - curve : targetY + curve;
+      const branchY = (sourceY + targetY) / 2;
 
       return {
         edge,
@@ -531,7 +497,7 @@ export function routeExplorationMapEdges(edges, layout, options = {}) {
         targetX,
         sourceY,
         targetY,
-        path: `M ${sourceX} ${sourceY} C ${sourceX} ${firstControlY}, ${targetX} ${secondControlY}, ${targetX} ${targetY}`,
+        path: `M ${sourceX} ${sourceY} V ${branchY} H ${targetX} V ${targetY}`,
       };
     }
 

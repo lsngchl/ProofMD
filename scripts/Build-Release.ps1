@@ -1,82 +1,77 @@
 [CmdletBinding()]
-param([switch]$Archive)
+param(
+    # Creates release/ProofMD-<version>-win-x64.zip for a GitHub Release.
+    [switch]$Archive,
+    # Builds the working tree as <version>-local, which installs normally but must not be published.
+    [switch]$Local
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$package = Get-Content -LiteralPath (Join-Path $repoRoot 'package.json') -Raw | ConvertFrom-Json
-$version = $package.version
-if ($version -notmatch '^\d+\.\d+\.\d+$') {
-    throw "A stable release version is required: $version"
-}
-
-[xml]$project = Get-Content -LiteralPath (Join-Path $repoRoot 'desktop\ProofMD\ProofMD.csproj')
-$properties = $project.Project.PropertyGroup
-if ($properties.Version -ne $version -or
-    $properties.InformationalVersion -ne $version -or
-    $properties.AssemblyVersion -ne "$version.0" -or
-    $properties.FileVersion -ne "$version.0") {
-    throw 'Package and executable versions must match before releasing.'
-}
-[xml]$manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'desktop\ProofMD\app.manifest')
-if ($manifest.assembly.assemblyIdentity.version -ne "$version.0") {
-    throw 'The application manifest version must match the release.'
-}
-$installer = Get-Content -LiteralPath (Join-Path $repoRoot 'desktop\ProofMD\Installer\ProofMD.Installation.ps1') -Raw
-if ($installer -notmatch ("DisplayVersion\s*=\s*'" + [regex]::Escape($version) + "'")) {
-    throw 'The installer display version must match the release.'
-}
+$projectPath = Join-Path $repoRoot 'desktop\ProofMD\ProofMD.csproj'
+$version = ([xml](Get-Content -LiteralPath $projectPath -Raw)).SelectSingleNode('/Project/PropertyGroup/Version').InnerText
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "ProofMD.csproj must declare a stable Version: $version" }
+if ($Local -and $Archive) { throw 'A local build cannot be archived for publishing.' }
 $readme = Get-Content -LiteralPath (Join-Path $repoRoot 'README.md') -Raw
 if (-not $readme.Contains("**Latest release: $version**")) {
-    throw 'The README latest stable release must match the release.'
+    throw "README.md must name $version as the latest release."
 }
 
-$dotnetCommand = Get-Command dotnet.exe -ErrorAction SilentlyContinue
-$dotnet = if ($dotnetCommand) { $dotnetCommand.Source } else { 'C:\Program Files\dotnet\dotnet.exe' }
-$pnpm = (Get-Command pnpm.cmd -ErrorAction Stop).Source
-$releaseRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot 'release'))
-$outputDirectory = [IO.Path]::GetFullPath((Join-Path $releaseRoot "ProofMD-$version"))
+function Invoke-Step([string]$Description, [scriptblock]$Command) {
+    Write-Host "== $Description"
+    & $Command
+    if ($LASTEXITCODE -ne 0) { throw "$Description failed." }
+}
 
 Push-Location $repoRoot
 try {
-    & $pnpm build
-    if ($LASTEXITCODE -ne 0) { throw 'Web asset build failed; publishing was stopped.' }
-
-    # Delete only this version's exact output, after validating the resolved path.
-    if ([IO.Path]::GetDirectoryName($outputDirectory) -ne $releaseRoot -or
-        [IO.Path]::GetFileName($outputDirectory) -ne "ProofMD-$version") {
-        throw "Unexpected release output path: $outputDirectory"
+    $productVersion = $version
+    if ($Local) {
+        $productVersion = "$version-local"
     }
+    else {
+        if (git status --porcelain) {
+            throw 'Commit or stash changes before building a release, or pass -Local.'
+        }
+        $tagCommit = git rev-parse --verify --quiet "refs/tags/v$version^{commit}"
+        if ($tagCommit -and $tagCommit -ne (git rev-parse HEAD)) {
+            throw "Tag v$version already points to another commit; raise the version in ProofMD.csproj."
+        }
+    }
+
+    $env:COREPACK_ENABLE_DOWNLOAD_PROMPT = '0'
+    Invoke-Step 'Install web dependencies' { corepack pnpm install --frozen-lockfile }
+    Invoke-Step 'Web tests' { corepack pnpm test }
+    Invoke-Step 'Desktop tests' { dotnet run --project test/ProofMD.DesktopTests/ProofMD.DesktopTests.csproj }
+    Invoke-Step 'Installer tests' { powershell.exe -NoProfile -ExecutionPolicy Bypass -File test/installer.test.ps1 }
+    Invoke-Step 'Web build' { corepack pnpm build }
+
+    $releaseRoot = Join-Path $repoRoot 'release'
+    $outputDirectory = Join-Path $releaseRoot "ProofMD-$version"
     foreach ($directory in @($releaseRoot, $outputDirectory)) {
         if ((Test-Path -LiteralPath $directory) -and
             ((Get-Item -LiteralPath $directory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
             throw "Release output must not use directory links: $directory"
         }
     }
-    if (Test-Path -LiteralPath $outputDirectory) {
-        Remove-Item -LiteralPath $outputDirectory -Recurse -Force
+    if (Test-Path -LiteralPath $outputDirectory) { Remove-Item -LiteralPath $outputDirectory -Recurse -Force }
+    Invoke-Step 'Publish' {
+        dotnet publish $projectPath -c Release -o $outputDirectory "-p:InformationalVersion=$productVersion"
     }
-
-    & $dotnet publish desktop/ProofMD/ProofMD.csproj -c Release -r win-x64 --self-contained false -o $outputDirectory
-    if ($LASTEXITCODE -ne 0) { throw 'Windows publishing failed.' }
 
     $executable = Get-Item -LiteralPath (Join-Path $outputDirectory 'ProofMD.exe')
-    if ($executable.VersionInfo.ProductName -ne 'ProofMD' -or
-        $executable.VersionInfo.FileVersion -ne "$version.0") {
-        throw 'Published executable metadata does not match the release.'
+    if ($executable.VersionInfo.ProductVersion -ne $productVersion) {
+        throw "Published ProofMD.exe reports $($executable.VersionInfo.ProductVersion), not $productVersion."
     }
-    foreach ($required in @('ProofMD.dll', 'ProofMD.runtimeconfig.json', 'Viewer\index.html',
-        'Install-ProofMD.cmd', 'Install-ProofMD.ps1', 'Uninstall-ProofMD.cmd',
-        'Uninstall-ProofMD.ps1', 'ProofMD.Installation.ps1')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $outputDirectory $required) -PathType Leaf)) {
-            throw "Published release is missing $required"
-        }
-    }
-
     Write-Host "Release folder: $outputDirectory"
+
     if ($Archive) {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
         $archivePath = Join-Path $releaseRoot "ProofMD-$version-win-x64.zip"
-        Compress-Archive -LiteralPath $outputDirectory -DestinationPath $archivePath -Force
+        if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }
+        [IO.Compression.ZipFile]::CreateFromDirectory(
+            $outputDirectory, $archivePath, [IO.Compression.CompressionLevel]::Optimal, $true)
         Write-Host "Release asset: $archivePath"
     }
 }

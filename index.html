@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="A small, local-first Markdown viewer with bracket-delimited LaTeX support."
+      content="A local Markdown viewer with LaTeX mathematics."
     />
     <title>ProofMD Viewer</title>
   </head>
   <body>
     <header class="topbar">
-      <div id="brand" class="brand" aria-label="ProofMD Viewer">
+      <div class="brand">
         <span id="brandName">ProofMD</span>
       </div>
 
@@ -47,13 +47,7 @@
           Keys
         </button>
         <button id="themeButton" class="quiet-button" type="button">Dark</button>
-        <label id="openButton" class="open-button" for="fileInput">Open .md</label>
-        <input
-          id="fileInput"
-          class="visually-hidden"
-          type="file"
-          accept=".md,.markdown,text/markdown,text/plain"
-        />
+        <button id="openButton" class="open-button" type="button">Open .md</button>
       </div>
     </header>
 
@@ -272,9 +266,8 @@
             <p class="map-reset-eyebrow">Exploration map</p>
             <h3 id="mapResetTitle">Reset this map?</h3>
             <p id="mapResetDescription">
-              All exploration progress will be cleared except for the current document. The full
-              structure will remain visible, with unexplored documents shown as question marks.
-              Your Markdown files will not be changed.
+              The map will restart from the current document, and the back history will be
+              cleared. Your Markdown files will not be changed.
             </p>
             <div class="map-reset-dialog-actions">
               <button class="map-dialog-cancel-button" type="submit" value="cancel" autofocus>

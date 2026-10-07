@@ -11,6 +11,9 @@ $application = (Resolve-Path -LiteralPath $ApplicationPath).Path
 $testId = [Guid]::NewGuid().ToString('N')
 $testRoot = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) "ProofMD-rendering-tests-$testId"))
 $utf8 = New-Object System.Text.UTF8Encoding($false)
+# The app saves its window placement on close; keep the user's placement intact.
+$windowStatePath = Join-Path $env:LOCALAPPDATA 'ProofMD\window-state.json'
+$savedWindowState = if (Test-Path -LiteralPath $windowStatePath) { [IO.File]::ReadAllBytes($windowStatePath) } else { $null }
 
 function Wait-RenderedDocument($Process, [string]$DocumentPath, [string]$Product) {
     # The viewer assigns this title only after rendering and enhancing the body.
@@ -95,6 +98,8 @@ try {
     Write-Host 'Desktop rendering tests passed.'
 }
 finally {
+    if ($null -ne $savedWindowState) { [IO.File]::WriteAllBytes($windowStatePath, $savedWindowState) }
+    elseif (Test-Path -LiteralPath $windowStatePath) { Remove-Item -LiteralPath $windowStatePath -Force }
     $expectedRoot = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) "ProofMD-rendering-tests-$testId"))
     if ($testRoot -ne $expectedRoot -or [IO.Path]::GetDirectoryName($testRoot) -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')) {
         throw "Unexpected rendering test cleanup path: $testRoot"

@@ -2,5 +2,4 @@
 * text=auto eol=lf
 
 # Keep Windows command scripts compatible with cmd.exe.
-*.bat text eol=crlf
 *.cmd text eol=crlf

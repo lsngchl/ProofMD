@@ -17,13 +17,11 @@
     <AllowedReferenceRelatedFileExtensions>.none</AllowedReferenceRelatedFileExtensions>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
+    <!-- The single source of the release version; README.md names the latest release. -->
     <Version>2.0.2</Version>
-    <AssemblyVersion>2.0.2.0</AssemblyVersion>
-    <FileVersion>2.0.2.0</FileVersion>
-    <InformationalVersion>2.0.2</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Authors>ProofMD</Authors>
-    <Description>A lightweight local Markdown and LaTeX viewer.</Description>
+    <Description>A local Markdown viewer with LaTeX mathematics.</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,7 +34,6 @@
 
   <ItemGroup>
     <Content Include="..\..\dist-desktop\**\*">
-      <Link>Viewer\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       <TargetPath>Viewer\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>

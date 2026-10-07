@@ -4,6 +4,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Uninstall-ProofMD.
 if errorlevel 1 (
   echo.
   echo ProofMD removal failed.
-  pause
 )
+echo.
+pause
 endlocal

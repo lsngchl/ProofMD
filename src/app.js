@@ -8,7 +8,6 @@ import {
   unfoldExplorationMap,
 } from "./map-layout.js";
 import { adjustMathTagLayout } from "./math-layout.js";
-import { readStoredTheme } from "./theme-storage.js";
 import {
   activeProofFoldIndex,
   createProofFoldIndex,
@@ -16,12 +15,10 @@ import {
 } from "./proof-fold.js";
 
 const elements = {
-  brand: document.querySelector("#brand"),
   brandName: document.querySelector("#brandName"),
   documentName: document.querySelector("#documentName"),
   dropOverlay: document.querySelector("#dropOverlay"),
   emptyState: document.querySelector("#emptyState"),
-  fileInput: document.querySelector("#fileInput"),
   keyGuideButton: document.querySelector("#keyGuideButton"),
   keyGuideCloseButton: document.querySelector("#keyGuideCloseButton"),
   keyGuidePanel: document.querySelector("#keyGuidePanel"),
@@ -55,7 +52,7 @@ const elements = {
   viewerLoading: document.querySelector("#viewerLoading"),
 };
 
-const webViewHost = window.chrome?.webview;
+const host = window.chrome.webview;
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const MAP_NODE_GEOMETRY = Object.freeze({
   nodeWidth: 220,
@@ -178,7 +175,6 @@ function replaceProofFoldLink(
 
   const details = document.createElement("details");
   details.className = "proof-fold";
-  if (targetId) details.dataset.proofFoldTarget = targetId;
   if (isPending) details.classList.add("is-pending");
   if (!targetId || !fragment || isCycle) details.classList.add("is-error");
 
@@ -276,7 +272,6 @@ function enhanceRenderedContent(
     if (isExternalWebHref(href)) {
       link.target = "_blank";
       link.rel = "noreferrer noopener";
-      link.classList.add("external-link");
       appendExternalLinkIndicator(link);
     }
   }
@@ -370,7 +365,6 @@ function collapseActiveProofFold() {
 
 function setProductBrand(name) {
   elements.brandName.textContent = name;
-  elements.brand.setAttribute("aria-label", `${name} Viewer`);
 }
 
 function renderDocument(
@@ -403,8 +397,8 @@ function renderDocument(
     link.dataset.proofmdLinkOrder = String(order);
   }
 
-  if (webViewHost && Number.isInteger(currentDocumentContextId)) {
-    webViewHost.postMessage({
+  if (Number.isInteger(currentDocumentContextId)) {
+    host.postMessage({
       type: "document-links",
       contextId: currentDocumentContextId,
       links: markdownLinks.map((link, order) => ({
@@ -720,10 +714,9 @@ function renderMap() {
     button.append(label, detail, glyph);
 
     button.addEventListener("click", () => {
-      if (!webViewHost) return;
       preferredMapDocumentPath = node.documentPath;
       closeMap();
-      webViewHost.postMessage({
+      host.postMessage({
         type: "open-map-node",
         id: documentId,
         position: currentDocumentPosition(),
@@ -733,7 +726,6 @@ function renderMap() {
     const shell = document.createElement("div");
     shell.className = "map-node-shell";
     shell.classList.toggle("is-current", isCurrent);
-    shell.dataset.occurrenceKey = node.occurrenceKey;
     shell.style.width = `${mapGeometry.nodeWidth}px`;
     shell.style.height = `${mapGeometry.nodeHeight}px`;
     shell.style.transform = `translate(${position.x}px, ${position.y}px)`;
@@ -1025,23 +1017,6 @@ function showRenderError(error) {
   announce(error instanceof Error ? error.message : "Rendering failed.");
 }
 
-async function openFile(file) {
-  if (!file) return;
-
-  setDocumentLoading(true);
-  await waitForPaint();
-
-  try {
-    const source = await file.text();
-    await renderWithLoading(source, file.name || "Untitled.md");
-  } catch {
-    announce("The selected file could not be read.");
-    setDocumentLoading(false);
-  } finally {
-    elements.fileInput.value = "";
-  }
-}
-
 async function renderWithLoading(
   source,
   name,
@@ -1149,7 +1124,7 @@ function setDocumentUnresolvedState(unresolved, enabled = true) {
   currentDocumentUnresolved = unresolved === true;
   unresolvedRequestPending = false;
   elements.unresolvedButton.disabled =
-    !enabled || !webViewHost || !Number.isInteger(currentDocumentContextId);
+    !enabled || !Number.isInteger(currentDocumentContextId);
   elements.unresolvedButton.setAttribute(
     "aria-pressed",
     String(currentDocumentUnresolved),
@@ -1159,28 +1134,21 @@ function setDocumentUnresolvedState(unresolved, enabled = true) {
     : "Mark this document as unresolved";
 }
 
-function setTheme(theme) {
+const THEME_STORAGE_KEY = "proofmd-theme";
+
+function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   elements.themeButton.textContent = theme === "dark" ? "Light" : "Dark";
   elements.themeButton.setAttribute(
     "aria-label",
     `Switch to ${theme === "dark" ? "light" : "dark"} theme`,
   );
-
-  try {
-    localStorage.setItem("proofmd-theme", theme);
-  } catch {
-    // Storage may be unavailable for a local file; the theme still works.
-  }
 }
 
+// Follows the operating system until the user picks a theme explicitly.
 function initialTheme() {
-  try {
-    const saved = readStoredTheme(localStorage);
-    if (saved) return saved;
-  } catch {
-    // Fall through to the operating-system preference.
-  }
+  const saved = localStorage.getItem(THEME_STORAGE_KEY);
+  if (saved === "light" || saved === "dark") return saved;
 
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
@@ -1188,24 +1156,10 @@ function initialTheme() {
 }
 
 function requestOpenFile() {
-  if (webViewHost) {
-    webViewHost.postMessage({ type: "open-file-dialog" });
-    return;
-  }
-
-  elements.fileInput.click();
+  host.postMessage({ type: "open-file-dialog" });
 }
 
-elements.fileInput.addEventListener("change", (event) => {
-  openFile(event.target.files?.[0]);
-});
-
-elements.openButton.addEventListener("click", (event) => {
-  if (!webViewHost) return;
-
-  event.preventDefault();
-  requestOpenFile();
-});
+elements.openButton.addEventListener("click", requestOpenFile);
 
 elements.proofFoldCollapseButton.addEventListener(
   "click",
@@ -1213,7 +1167,7 @@ elements.proofFoldCollapseButton.addEventListener(
 );
 
 elements.preview.addEventListener("click", (event) => {
-  if (!webViewHost || event.defaultPrevented || event.button !== 0) return;
+  if (event.defaultPrevented || event.button !== 0) return;
 
   const target = event.target instanceof Element ? event.target : null;
   const link = target?.closest("a[href]");
@@ -1224,7 +1178,7 @@ elements.preview.addEventListener("click", (event) => {
 
   event.preventDefault();
   const order = Number(link.dataset.proofmdLinkOrder);
-  webViewHost.postMessage({
+  host.postMessage({
     type: "open-markdown-link",
     href,
     sourceDocument: link.dataset.proofFoldSource ?? null,
@@ -1235,17 +1189,13 @@ elements.preview.addEventListener("click", (event) => {
 
 elements.mapButton.addEventListener("click", toggleMap);
 elements.unresolvedButton.addEventListener("click", () => {
-  if (
-    !webViewHost ||
-    unresolvedRequestPending ||
-    !Number.isInteger(currentDocumentContextId)
-  ) {
+  if (unresolvedRequestPending || !Number.isInteger(currentDocumentContextId)) {
     return;
   }
 
   unresolvedRequestPending = true;
   elements.unresolvedButton.disabled = true;
-  webViewHost.postMessage({
+  host.postMessage({
     type: "set-document-unresolved",
     contextId: currentDocumentContextId,
     unresolved: !currentDocumentUnresolved,
@@ -1256,7 +1206,7 @@ elements.mapResetButton.addEventListener("click", () => {
   if (!elements.mapResetButton.disabled) elements.mapResetDialog.showModal();
 });
 elements.mapResetConfirmButton.addEventListener("click", () => {
-  webViewHost?.postMessage({ type: "reset-map" });
+  host.postMessage({ type: "reset-map" });
 });
 elements.mapOverlay.addEventListener("click", (event) => {
   if (event.target === elements.mapOverlay) closeMap();
@@ -1308,7 +1258,8 @@ document.addEventListener("click", (event) => {
 
 elements.themeButton.addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-  setTheme(next);
+  applyTheme(next);
+  localStorage.setItem(THEME_STORAGE_KEY, next);
 });
 
 document.addEventListener("keydown", (event) => {
@@ -1340,7 +1291,6 @@ document.addEventListener("keydown", (event) => {
   }
 
   if (
-    webViewHost &&
     !event.repeat &&
     (event.key === "Backspace" || event.key === ",") &&
     !event.ctrlKey &&
@@ -1351,7 +1301,7 @@ document.addEventListener("keydown", (event) => {
   ) {
     event.preventDefault();
     closeMap();
-    webViewHost.postMessage({ type: "go-back" });
+    host.postMessage({ type: "go-back" });
     return;
   }
 
@@ -1382,90 +1332,58 @@ window.addEventListener("drop", (event) => {
   event.preventDefault();
   setDropOverlay(false);
   const file = event.dataTransfer?.files?.[0];
-  if (
-    file &&
-    webViewHost &&
-    typeof webViewHost.postMessageWithAdditionalObjects === "function"
-  ) {
-    webViewHost.postMessageWithAdditionalObjects(
-      { type: "open-dropped-file" },
-      [file],
-    );
-    return;
+  if (file) {
+    host.postMessageWithAdditionalObjects({ type: "open-dropped-file" }, [file]);
   }
-
-  openFile(file);
 });
 
-window.ProofMD = Object.freeze({
-  openMarkdown(
-    source,
-    name = "Untitled.md",
-    contextId = null,
-    unresolved = false,
-    restorePosition = null,
-    proofFold = null,
-  ) {
-    if (typeof source !== "string") return;
-    currentDocumentContextId = Number.isInteger(contextId) ? contextId : null;
-    setDocumentUnresolvedState(unresolved, true);
-    return renderWithLoading(
-      source,
-      typeof name === "string" ? name : "Untitled.md",
-      { restorePosition, proofFold },
-    );
-  },
-  reloadMarkdown(source, name = "Untitled.md", contextId = null, proofFold = null) {
-    if (typeof source !== "string") return;
-    if (Number.isInteger(contextId)) {
-      currentDocumentContextId = contextId;
-    }
-    return renderWithLoading(
-      source,
-      typeof name === "string" ? name : "Untitled.md",
-      { preserveScroll: true, showLoading: false, proofFold },
-    );
-  },
-  showEmptyState,
-});
+function openMarkdown({ source, name, contextId, unresolved, restorePosition, proofFold }) {
+  if (typeof source !== "string") return;
+  currentDocumentContextId = Number.isInteger(contextId) ? contextId : null;
+  setDocumentUnresolvedState(unresolved, true);
+  renderWithLoading(source, name, { restorePosition, proofFold });
+}
 
-setTheme(initialTheme());
+async function reloadMarkdown({ source, name, contextId, proofFold }) {
+  if (typeof source !== "string") return;
+  if (Number.isInteger(contextId)) currentDocumentContextId = contextId;
+  await renderWithLoading(source, name, {
+    preserveScroll: true,
+    showLoading: false,
+    proofFold,
+  });
+}
+
+applyTheme(initialTheme());
 showEmptyState();
 
-if (webViewHost) {
-  webViewHost.addEventListener("message", async (event) => {
-    const message = event.data;
-    if (message?.type === "open-markdown") {
-      window.ProofMD.openMarkdown(
-        message.source,
-        message.name,
-        message.contextId,
-        message.unresolved,
-        message.restorePosition,
-        message.proofFold,
-      );
-    } else if (message?.type === "reload-markdown") {
-      await window.ProofMD.reloadMarkdown(
-        message.source,
-        message.name,
-        message.contextId,
-        message.proofFold,
-      );
-    } else if (message?.type === "show-empty-state") {
-      window.ProofMD.showEmptyState();
-    } else if (message?.type === "host-window-visible") {
+host.addEventListener("message", async (event) => {
+  const message = event.data;
+  switch (message?.type) {
+    case "open-markdown":
+      openMarkdown(message);
+      break;
+    case "reload-markdown":
+      await reloadMarkdown(message);
+      break;
+    case "show-empty-state":
+      showEmptyState();
+      break;
+    case "host-window-visible":
       await waitForPaint();
-      webViewHost.postMessage({ type: "viewer-window-painted" });
-    } else if (message?.type === "map-state") {
+      host.postMessage({ type: "viewer-window-painted" });
+      break;
+    case "map-state":
       setMapState(message);
-    } else if (message?.type === "document-unresolved-state") {
+      break;
+    case "document-unresolved-state":
       if (message.contextId !== currentDocumentContextId) return;
       setDocumentUnresolvedState(message.unresolved, message.enabled !== false);
       if (typeof message.error === "string" && message.error) announce(message.error);
-    }
-  });
+      break;
+  }
+});
 
-  waitForPaint().then(() => {
-    webViewHost.postMessage({ type: "viewer-shell-painted" });
-  });
-}
+waitForPaint().then(() => {
+  host.postMessage({ type: "viewer-shell-painted" });
+});
