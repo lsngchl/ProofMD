@@ -200,8 +200,8 @@ test("preserves unrelated fragments, document links, external links and footnote
   assert.match(html, /href="#missing"/);
   assert.match(html, /href="other.md#fn1"/);
   assert.match(html, /href="https:\/\/example.com\/#fn1"/);
-  assert.match(html, /<sup class="footnote-ref"><a href="#fn1" id="fnref1">/);
-  assert.match(html, /<li id="fn1" class="footnote-item">/);
+  assert.match(html, /<sup class="footnote-ref"><a href="#fn-document-1" id="fnref-document-1">/);
+  assert.match(html, /<li id="fn-document-1" class="footnote-item">/);
   assert.doesNotMatch(html, /id="preview"/);
 });
 

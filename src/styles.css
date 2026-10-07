@@ -1511,9 +1511,32 @@ noscript {
 }
 
 @media print {
-  :root {
+  /* Paper is always light, whichever theme is on screen. */
+  :root,
+  :root[data-theme="dark"] {
+    color-scheme: light;
+    --background: #fff;
     --surface: #fff;
+    --surface-muted: #f8f6f1;
     --ink: #000;
+    --muted: #4b5250;
+    --line: #deddd7;
+    --line-strong: #cac9c1;
+    --accent: #1f6b5b;
+    --accent-strong: #155246;
+    --accent-soft: #e4f0ec;
+    --code-bg: #f1f0eb;
+    --quote-bg: #f4f8f6;
+  }
+
+  /* Folds reach into the card's padding on screen; on paper there is none. */
+  .document-card {
+    overflow: visible;
+  }
+
+  .proof-fold {
+    margin-left: 0;
+    margin-right: 0;
   }
 
   .topbar,

@@ -40,10 +40,11 @@ A ProofFold document is a folder whose `prooffold.json` names an entry file:
 
 When the entry file is opened, links titled `"fold"`, such as
 `[Fold: bound the error](folds/error.md "fold")`, expand the linked file in
-place instead of navigating to it, and the map shows the complete fold
-structure. `foldsDirectory` defaults to `folds`. If the manifest is missing or
-invalid, the file opens as ordinary Markdown. `DocumentFormats/ProofFold/`
-contains a template and the authoring rules.
+place instead of navigating to it. The map shows the complete fold structure;
+selecting a fold there opens it and the folds that contain it. HTML comments
+such as `<!-- to do -->` are hidden. `foldsDirectory` defaults to `folds`. If
+the manifest is missing or invalid, the file opens as ordinary Markdown.
+`DocumentFormats/ProofFold/` contains a template and the authoring rules.
 
 ## Unresolved markers
 

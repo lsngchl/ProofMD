@@ -1,59 +1,42 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace ProofMD;
 
 internal readonly record struct ProofFoldDocument(string Id, string Source);
 
+/// <summary>
+/// The fold sources of a ProofFold document. The viewer renders folds and derives the fold
+/// map from these sources with the same Markdown parser, so the two always agree.
+/// </summary>
 internal sealed class ProofFoldStructure
 {
     public const string ManifestFileName = "prooffold.json";
 
-    private static readonly Regex FoldLinkPattern = new(
-        """(?<!!)\[[^\]\r\n]*\]\(\s*(?:<(?<angle>[^>\r\n]+)>|(?<plain>[^\s)\r\n]+))(?:\s+(?:"(?<double>[^"\r\n]*)"|'(?<single>[^'\r\n]*)'|\((?<parenthesized>[^)\r\n]*)\)))?\s*\)""",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
-    private readonly Dictionary<string, string> _sourcePathsById;
-    private readonly Dictionary<string, int> _documentOrders;
+    private readonly Dictionary<string, string> _pathsById;
 
     private ProofFoldStructure(
         string rootDirectory,
-        string manifestPath,
-        string entryPath,
         string entryId,
         string foldsDirectory,
-        string fingerprint,
         IReadOnlyList<ProofFoldDocument> folds,
-        Dictionary<string, string> sourcePathsById,
-        IReadOnlyList<string> documents,
-        IReadOnlyList<ExplorationMapEdge> edges,
-        Dictionary<string, int> documentOrders)
+        Dictionary<string, string> pathsById)
     {
         RootDirectory = rootDirectory;
-        ManifestPath = manifestPath;
-        EntryPath = entryPath;
         EntryId = entryId;
         FoldsDirectory = foldsDirectory;
-        Fingerprint = fingerprint;
         Folds = folds;
-        _sourcePathsById = sourcePathsById;
-        Documents = documents;
-        Edges = edges;
-        _documentOrders = documentOrders;
+        _pathsById = pathsById;
     }
 
     public string RootDirectory { get; }
-    public string ManifestPath { get; }
-    public string EntryPath { get; }
     public string EntryId { get; }
     public string FoldsDirectory { get; }
-    public string Fingerprint { get; }
     public IReadOnlyList<ProofFoldDocument> Folds { get; }
-    public IReadOnlyList<string> Documents { get; }
-    public IReadOnlyList<ExplorationMapEdge> Edges { get; }
 
+    /// <summary>
+    /// Returns null when the document is ordinary Markdown, including when its manifest is
+    /// unreadable or invalid: ProofFold only augments a document that can always be shown.
+    /// </summary>
     public static ProofFoldStructure? TryLoadForEntry(string markdownPath)
     {
         try
@@ -64,357 +47,145 @@ internal sealed class ProofFoldStructure
             exception is IOException or UnauthorizedAccessException or
                 InvalidDataException or ArgumentException or NotSupportedException)
         {
-            // ProofFold augments a readable Markdown file; its metadata must not
-            // prevent opening or reloading the document itself.
-            System.Diagnostics.Trace.TraceWarning(
-                "ProofFold could not be loaded for {0}: {1}", markdownPath, exception.Message);
             return null;
         }
     }
 
     public static ProofFoldStructure? LoadForEntry(string markdownPath)
     {
-        string fullMarkdownPath = Path.GetFullPath(markdownPath);
-        string? rootDirectory = Path.GetDirectoryName(fullMarkdownPath);
-        if (rootDirectory is null) return null;
-
+        string rootDirectory = Path.GetDirectoryName(markdownPath)
+            ?? throw new ArgumentException("A document path is required.", nameof(markdownPath));
         string manifestPath = Path.Combine(rootDirectory, ManifestFileName);
         if (!File.Exists(manifestPath)) return null;
 
-        string manifestSource = ReadSharedText(manifestPath);
-        JsonDocument manifest;
+        JsonElement manifest;
         try
         {
-            manifest = JsonDocument.Parse(manifestSource);
+            using JsonDocument document = JsonDocument.Parse(ReadSharedText(manifestPath));
+            manifest = document.RootElement.Clone();
         }
         catch (JsonException exception)
         {
-            throw new InvalidDataException(
-                $"{ManifestFileName} is not valid JSON.",
-                exception);
+            throw new InvalidDataException($"{ManifestFileName} is not valid JSON.", exception);
         }
 
-        using (manifest)
+        if (manifest.ValueKind != JsonValueKind.Object ||
+            !manifest.TryGetProperty("formatVersion", out JsonElement version) ||
+            version.ValueKind != JsonValueKind.Number ||
+            !version.TryGetInt32(out int formatVersion) ||
+            formatVersion != 1)
         {
-            JsonElement root = manifest.RootElement;
-            if (root.ValueKind != JsonValueKind.Object ||
-                !root.TryGetProperty("formatVersion", out JsonElement versionElement) ||
-                versionElement.ValueKind != JsonValueKind.Number ||
-                !versionElement.TryGetInt32(out int version) ||
-                version != 1)
+            throw new InvalidDataException($"{ManifestFileName} must declare formatVersion 1.");
+        }
+
+        string entryPath = ResolveConfiguredPath(rootDirectory, RequiredPath(manifest, "entry"), "entry");
+        if (!MarkdownPaths.AreEqual(entryPath, Path.GetFullPath(markdownPath))) return null;
+        if (!MarkdownPaths.IsMarkdown(entryPath) || !File.Exists(entryPath))
+        {
+            throw new InvalidDataException("The ProofFold entry must be an existing Markdown file.");
+        }
+
+        string foldsDirectory = ResolveConfiguredPath(
+            rootDirectory,
+            manifest.TryGetProperty("foldsDirectory", out _) ? RequiredPath(manifest, "foldsDirectory") : "folds",
+            "foldsDirectory");
+
+        string entryId = DocumentId(rootDirectory, MarkdownPaths.Canonicalize(entryPath));
+        var pathsById = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [entryId] = entryPath,
+        };
+        var folds = new List<ProofFoldDocument>();
+        IEnumerable<string> foldPaths = Directory.Exists(foldsDirectory)
+            ? Directory.EnumerateFiles(foldsDirectory, "*", new EnumerationOptions
             {
-                throw new InvalidDataException(
-                    $"{ManifestFileName} must declare formatVersion 1.");
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.ReparsePoint,
+            })
+            : [];
+        foreach (string foldPath in foldPaths
+            .Where(MarkdownPaths.IsMarkdown)
+            .Order(StringComparer.OrdinalIgnoreCase))
+        {
+            string id = DocumentId(rootDirectory, foldPath);
+            if (pathsById.ContainsKey(id)) continue;
+            try
+            {
+                folds.Add(new ProofFoldDocument(id, ReadSharedText(foldPath)));
+                pathsById.Add(id, foldPath);
             }
-
-            string entryId = RequiredPath(root, "entry");
-            string entryPath = ResolveConfiguredPath(rootDirectory, entryId, "entry");
-            if (!PathsEqual(entryPath, fullMarkdownPath)) return null;
-            if (!IsMarkdownPath(entryPath) || !File.Exists(entryPath))
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                throw new InvalidDataException("The ProofFold entry must be an existing Markdown file.");
-            }
-
-            string foldsDirectory = ResolveConfiguredPath(
-                rootDirectory,
-                root.TryGetProperty("foldsDirectory", out _)
-                    ? RequiredPath(root, "foldsDirectory")
-                    : "folds",
-                "foldsDirectory");
-
-            var sourcePathsById = new Dictionary<string, string>(
-                StringComparer.OrdinalIgnoreCase)
-            {
-                [CanonicalId(rootDirectory, entryPath)] = entryPath,
-            };
-            var sourcesByPath = new Dictionary<string, string>(
-                StringComparer.OrdinalIgnoreCase)
-            {
-                [entryPath] = ReadSharedText(entryPath),
-            };
-            var folds = new List<ProofFoldDocument>();
-            IEnumerable<string> foldPaths = Directory.Exists(foldsDirectory)
-                ? Directory.EnumerateFiles(foldsDirectory, "*", new EnumerationOptions
-                {
-                    RecurseSubdirectories = true,
-                    IgnoreInaccessible = true,
-                    AttributesToSkip = FileAttributes.ReparsePoint,
-                })
-                : [];
-            foreach (string foldPath in foldPaths
-                .Where(IsMarkdownPath)
-                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
-            {
-                string id = CanonicalId(rootDirectory, foldPath);
-                if (sourcePathsById.ContainsKey(id)) continue;
-                string source;
-                try
-                {
-                    source = ReadSharedText(foldPath);
-                }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                {
-                    // A missing or unreadable fold gets the viewer's existing
-                    // unavailable-target message; other folds remain usable.
-                    continue;
-                }
-                sourcePathsById.Add(id, foldPath);
-                folds.Add(new ProofFoldDocument(id, source));
-                sourcesByPath.Add(foldPath, source);
-            }
-
-            BuildMap(
-                entryPath,
-                foldsDirectory,
-                sourcesByPath,
-                out IReadOnlyList<string> documents,
-                out IReadOnlyList<ExplorationMapEdge> edges,
-                out Dictionary<string, int> documentOrders);
-
-            var fingerprintSource = new StringBuilder(manifestSource);
-            foreach (ProofFoldDocument fold in folds)
-            {
-                fingerprintSource
-                    .Append('\0')
-                    .Append(fold.Id)
-                    .Append('\0')
-                    .Append(fold.Source);
-            }
-            string fingerprint = Convert.ToHexString(SHA256.HashData(
-                Encoding.UTF8.GetBytes(fingerprintSource.ToString())));
-
-            return new ProofFoldStructure(
-                rootDirectory,
-                manifestPath,
-                entryPath,
-                CanonicalId(rootDirectory, entryPath),
-                foldsDirectory,
-                fingerprint,
-                folds,
-                sourcePathsById,
-                documents,
-                edges,
-                documentOrders);
-        }
-    }
-
-    public bool ContainsDocument(string path)
-    {
-        string fullPath;
-        try
-        {
-            fullPath = Path.GetFullPath(path);
-        }
-        catch
-        {
-            return false;
-        }
-
-        return _documentOrders.ContainsKey(fullPath);
-    }
-
-    public int GetDocumentOrder(string path)
-    {
-        return _documentOrders.TryGetValue(Path.GetFullPath(path), out int order)
-            ? order
-            : int.MaxValue;
-    }
-
-    public bool TryResolveSourceDocument(string documentId, out string path)
-    {
-        return _sourcePathsById.TryGetValue(documentId, out path!);
-    }
-
-    public bool AffectsRenderedDocument(string path)
-    {
-        string fullPath;
-        try
-        {
-            fullPath = Path.GetFullPath(path);
-        }
-        catch
-        {
-            return false;
-        }
-
-        return PathsEqual(fullPath, ManifestPath) ||
-            PathsEqual(fullPath, EntryPath) ||
-            IsWithinDirectory(FoldsDirectory, fullPath);
-    }
-
-    private static void BuildMap(
-        string entryPath,
-        string foldsDirectory,
-        IReadOnlyDictionary<string, string> sourcesByPath,
-        out IReadOnlyList<string> documents,
-        out IReadOnlyList<ExplorationMapEdge> edges,
-        out Dictionary<string, int> documentOrders)
-    {
-        var discovered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var pending = new Queue<string>();
-        var orderedDocuments = new List<string>();
-        var orderedEdges = new List<ExplorationMapEdge>();
-
-        void Discover(string path)
-        {
-            if (!discovered.Add(path)) return;
-            orderedDocuments.Add(path);
-            pending.Enqueue(path);
-        }
-
-        Discover(entryPath);
-        while (pending.Count > 0)
-        {
-            string sourcePath = pending.Dequeue();
-            if (!sourcesByPath.TryGetValue(sourcePath, out string? source)) continue;
-
-            int linkOrder = 0;
-            foreach (Match match in FoldLinkPattern.Matches(source))
-            {
-                string title = match.Groups["double"].Success
-                    ? match.Groups["double"].Value
-                    : match.Groups["single"].Success
-                        ? match.Groups["single"].Value
-                        : match.Groups["parenthesized"].Value;
-                if (!title.Trim().Equals("fold", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                string target = match.Groups["angle"].Success
-                    ? match.Groups["angle"].Value
-                    : match.Groups["plain"].Value;
-                string? targetPath = ResolveFoldTarget(sourcePath, target);
-                if (targetPath is null ||
-                    !IsWithinDirectory(foldsDirectory, targetPath) ||
-                    !sourcesByPath.ContainsKey(targetPath))
-                {
-                    continue;
-                }
-
-                orderedEdges.Add(new ExplorationMapEdge(
-                    sourcePath,
-                    targetPath,
-                    linkOrder++));
-                Discover(targetPath);
+                // The viewer reports a missing fold; the other folds stay usable.
             }
         }
 
-        documents = orderedDocuments;
-        edges = orderedEdges;
-        documentOrders = orderedDocuments
-            .Select((path, order) => (path, order))
-            .ToDictionary(
-                item => item.path,
-                item => item.order,
-                StringComparer.OrdinalIgnoreCase);
+        return new ProofFoldStructure(rootDirectory, entryId, foldsDirectory, folds, pathsById);
     }
 
-    private static string? ResolveFoldTarget(string sourcePath, string href)
+    public bool TryResolveDocument(string documentId, out string path)
     {
-        try
-        {
-            int suffixStart = href.IndexOfAny(['?', '#']);
-            string encodedPath = suffixStart >= 0 ? href[..suffixStart] : href;
-            if (string.IsNullOrWhiteSpace(encodedPath)) return null;
-
-            string relativePath = Uri.UnescapeDataString(encodedPath)
-                .Replace('/', Path.DirectorySeparatorChar);
-            if (Path.IsPathRooted(relativePath) || !IsMarkdownPath(relativePath))
-            {
-                return null;
-            }
-
-            string? sourceDirectory = Path.GetDirectoryName(sourcePath);
-            return sourceDirectory is null
-                ? null
-                : Path.GetFullPath(Path.Combine(sourceDirectory, relativePath));
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException or NotSupportedException or PathTooLongException or UriFormatException)
-        {
-            return null;
-        }
+        return _pathsById.TryGetValue(documentId, out path!);
     }
 
-    private static string RequiredPath(JsonElement root, string propertyName)
+    public bool HasSameContent(ProofFoldStructure? other)
     {
-        if (!root.TryGetProperty(propertyName, out JsonElement element) ||
+        return other is not null &&
+            EntryId == other.EntryId &&
+            FoldsDirectory == other.FoldsDirectory &&
+            Folds.SequenceEqual(other.Folds);
+    }
+
+    public object ToMessage()
+    {
+        return new
+        {
+            entry = EntryId,
+            folds = Folds.Select(fold => new { path = fold.Id, source = fold.Source }),
+        };
+    }
+
+    private static string RequiredPath(JsonElement manifest, string propertyName)
+    {
+        if (!manifest.TryGetProperty(propertyName, out JsonElement element) ||
             element.ValueKind != JsonValueKind.String ||
             string.IsNullOrWhiteSpace(element.GetString()))
         {
-            throw new InvalidDataException(
-                $"{ManifestFileName} must declare a non-empty {propertyName} path.");
+            throw new InvalidDataException($"{ManifestFileName} must declare a non-empty {propertyName} path.");
         }
 
         string value = element.GetString()!;
         if (value.Contains('\\'))
         {
-            throw new InvalidDataException(
-                $"ProofFold {propertyName} must use forward slashes.");
+            throw new InvalidDataException($"ProofFold {propertyName} must use forward slashes.");
         }
         return value;
     }
 
-    private static string ResolveConfiguredPath(
-        string rootDirectory,
-        string relativePath,
-        string propertyName)
+    private static string ResolveConfiguredPath(string rootDirectory, string relativePath, string propertyName)
     {
         if (Path.IsPathRooted(relativePath))
         {
-            throw new InvalidDataException(
-                $"ProofFold {propertyName} must be relative to {ManifestFileName}.");
+            throw new InvalidDataException($"ProofFold {propertyName} must be relative to {ManifestFileName}.");
         }
 
-        string path = Path.GetFullPath(Path.Combine(
-            rootDirectory,
-            relativePath.Replace('/', Path.DirectorySeparatorChar)));
-        if (!IsWithinDirectory(rootDirectory, path))
+        string path = Path.GetFullPath(Path.Combine(rootDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        if (!MarkdownPaths.IsWithin(rootDirectory, path))
         {
-            throw new InvalidDataException(
-                $"ProofFold {propertyName} escapes the document root.");
+            throw new InvalidDataException($"ProofFold {propertyName} escapes the document folder.");
         }
         return path;
     }
 
-    private static string CanonicalId(string rootDirectory, string path)
+    private static string DocumentId(string rootDirectory, string path)
     {
-        return Path.GetRelativePath(rootDirectory, path)
-            .Replace(Path.DirectorySeparatorChar, '/');
-    }
-
-    private static bool IsWithinDirectory(string directory, string path)
-    {
-        string relative = Path.GetRelativePath(directory, path);
-        return !Path.IsPathRooted(relative) &&
-            !relative.Equals("..", StringComparison.Ordinal) &&
-            !relative.StartsWith(
-                $"..{Path.DirectorySeparatorChar}",
-                StringComparison.Ordinal);
-    }
-
-    private static bool IsMarkdownPath(string path)
-    {
-        string extension = Path.GetExtension(path);
-        return extension.Equals(".md", StringComparison.OrdinalIgnoreCase) ||
-            extension.Equals(".markdown", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool PathsEqual(string firstPath, string secondPath)
-    {
-        return Path.GetFullPath(firstPath).Equals(
-            Path.GetFullPath(secondPath),
-            StringComparison.OrdinalIgnoreCase);
+        return Path.GetRelativePath(rootDirectory, path).Replace(Path.DirectorySeparatorChar, '/');
     }
 
     private static string ReadSharedText(string path)
     {
-        using var stream = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete);
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true);
         return reader.ReadToEnd();
     }

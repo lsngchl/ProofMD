@@ -3,8 +3,9 @@ const EMPTY_ANCHOR = /^<a[\t ]+id[\t ]*=[\t ]*(?:"([^"\r\n]*)"|'([^'\r\n]*)')[\t
 /** Accept empty, id-only anchors while keeping markdown-it's raw HTML disabled. */
 export function anchorPlugin(markdown) {
   markdown.inline.ruler.before("html_inline", "proofmd_anchor", inlineAnchorRule);
+  // An anchor line inside a paragraph stays part of it (the inline rule handles it).
   markdown.block.ruler.before("html_block", "proofmd_anchor_block", blockAnchorRule, {
-    alt: ["paragraph", "reference", "blockquote", "list"],
+    alt: ["reference", "blockquote", "list"],
   });
   markdown.core.ruler.push("proofmd_anchor_links", scopeAnchorLinks);
   markdown.renderer.rules.proofmd_anchor = (tokens, index, options, env, renderer) => {

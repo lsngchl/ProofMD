@@ -6,10 +6,14 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- The window-independent host code, compiled without WinForms or WebView2. -->
   <ItemGroup>
-    <Compile Include="..\..\desktop\ProofMD\DocumentNavigationState.cs" Link="DocumentNavigationState.cs" />
-    <Compile Include="..\..\desktop\ProofMD\ExplorationMapEdge.cs" Link="ExplorationMapEdge.cs" />
+    <Compile Include="..\..\desktop\ProofMD\ExplorationMap.cs" Link="ExplorationMap.cs" />
+    <Compile Include="..\..\desktop\ProofMD\MarkdownPaths.cs" Link="MarkdownPaths.cs" />
+    <Compile Include="..\..\desktop\ProofMD\NavigationPolicy.cs" Link="NavigationPolicy.cs" />
     <Compile Include="..\..\desktop\ProofMD\ProofFoldStructure.cs" Link="ProofFoldStructure.cs" />
     <Compile Include="..\..\desktop\ProofMD\UnresolvedStateStore.cs" Link="UnresolvedStateStore.cs" />
+    <Compile Include="..\..\desktop\ProofMD\ViewerMessages.cs" Link="ViewerMessages.cs" />
+    <Compile Include="..\..\desktop\ProofMD\ViewerSession.cs" Link="ViewerSession.cs" />
   </ItemGroup>
 </Project>

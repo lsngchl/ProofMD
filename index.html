@@ -3,11 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Documents are local: nothing they contain may load from the network. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'"
+    />
     <meta
       name="description"
       content="A local Markdown viewer with LaTeX mathematics."
     />
-    <title>ProofMD Viewer</title>
+    <title>ProofMD</title>
   </head>
   <body>
     <header class="topbar">
@@ -111,13 +116,8 @@
         </div>
 
         <div class="document-content">
-          <article
-            id="preview"
-            class="markdown-body"
-            aria-live="polite"
-            hidden
-          ></article>
-          <div id="emptyState" class="empty-state">
+          <article id="preview" class="markdown-body" hidden></article>
+          <div id="emptyState" class="empty-state" hidden>
             <span class="empty-state-icon" aria-hidden="true">
               <svg viewBox="0 0 48 48" role="img">
                 <path d="M14 5.5h13l8 8V25" />
@@ -290,6 +290,6 @@
     <p id="status" class="visually-hidden" role="status" aria-live="polite"></p>
 
     <noscript>This viewer requires JavaScript to render Markdown and mathematics.</noscript>
-    <script type="module" src="/src/app.js"></script>
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
