@@ -57,40 +57,29 @@ function Test-RenderedDocument([string]$DocumentPath, [string]$Product, [scriptb
 }
 
 try {
-    $cases = @(
-        @{ Name = 'missing-components.md'; Product = 'ProofFold'; Manifest = @{ formatVersion = 1; entry = 'missing-components.md'; foldsDirectory = 'folds'; notationRegistry = 'notation.yaml'; referencesDirectory = 'references' } },
-        @{ Name = 'minimal.md'; Product = 'ProofFold'; Manifest = @{ formatVersion = 1; entry = 'minimal.md' } },
-        @{ Name = 'minimal.markdown'; Product = 'ProofFold'; Manifest = @{ formatVersion = 1; entry = 'minimal.markdown' } },
-        @{ Name = 'broken-manifest.md'; Product = 'ProofMD'; Manifest = '{' },
-        @{ Name = 'ordinary.md'; Product = 'ProofMD'; Manifest = $null }
-    )
-    foreach ($case in $cases) {
-        $directory = Join-Path $testRoot $case.Name
-        New-Item -ItemType Directory -Path $directory -Force | Out-Null
-        $document = Join-Path $directory $case.Name
-        [IO.File]::WriteAllText($document, "# Rendering check`n`nThe document body is readable.`n`n[Missing fold](folds/missing.md `"fold`")`n", $utf8)
-        if ($null -ne $case.Manifest) {
-            $manifest = if ($case.Manifest -is [string]) { $case.Manifest } else { $case.Manifest | ConvertTo-Json }
-            [IO.File]::WriteAllText((Join-Path $directory 'prooffold.json'), $manifest, $utf8)
-        }
-        Test-RenderedDocument $document $case.Product
+    # Two windows cover what only the real app can show: the viewer starting in WebView2,
+    # ProofFold rendering and live reload (.md), and ordinary Markdown (.markdown).
+    # Manifest variations are covered by the desktop tests without opening windows.
+    $proofFoldDirectory = Join-Path $testRoot 'prooffold'
+    New-Item -ItemType Directory -Path (Join-Path $proofFoldDirectory 'folds') -Force | Out-Null
+    $proofFoldDocument = Join-Path $proofFoldDirectory 'main.md'
+    $manifestPath = Join-Path $proofFoldDirectory 'prooffold.json'
+    $validManifest = '{"formatVersion":1,"entry":"main.md"}'
+    [IO.File]::WriteAllText($proofFoldDocument, "# Rendering check`n`nThe body is \(x^2\).`n`n[Fold: step](folds/step.md `"fold`")`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $proofFoldDirectory 'folds\step.md'), 'Fold body.', $utf8)
+    [IO.File]::WriteAllText($manifestPath, $validManifest, $utf8)
+    Test-RenderedDocument $proofFoldDocument 'ProofFold' {
+        param($process)
+        [IO.File]::WriteAllText($manifestPath, '{', $utf8)
+        Wait-RenderedDocument $process $proofFoldDocument 'ProofMD'
+        [IO.File]::WriteAllText($manifestPath, $validManifest, $utf8)
+        Wait-RenderedDocument $process $proofFoldDocument 'ProofFold'
+        Write-Host 'Reloaded after the manifest was damaged and repaired.'
     }
 
-    $reloadDirectory = Join-Path $testRoot 'reload'
-    New-Item -ItemType Directory -Path $reloadDirectory -Force | Out-Null
-    $reloadDocument = Join-Path $reloadDirectory 'reload.md'
-    $reloadManifest = Join-Path $reloadDirectory 'prooffold.json'
-    $validManifest = '{"formatVersion":1,"entry":"reload.md"}'
-    [IO.File]::WriteAllText($reloadDocument, '# Reload check', $utf8)
-    [IO.File]::WriteAllText($reloadManifest, $validManifest, $utf8)
-    Test-RenderedDocument $reloadDocument 'ProofFold' {
-        param($process)
-        [IO.File]::WriteAllText($reloadManifest, '{', $utf8)
-        Wait-RenderedDocument $process $reloadDocument 'ProofMD'
-        [IO.File]::WriteAllText($reloadManifest, $validManifest, $utf8)
-        Wait-RenderedDocument $process $reloadDocument 'ProofFold'
-        Write-Host 'Rendered after manifest corruption and repair.'
-    }
+    $ordinaryDocument = Join-Path $testRoot 'ordinary.markdown'
+    [IO.File]::WriteAllText($ordinaryDocument, "# Ordinary`n`nPlain Markdown with `$e^{i\pi}+1=0`$.`n", $utf8)
+    Test-RenderedDocument $ordinaryDocument 'ProofMD'
 
     foreach ($document in $ProofFoldDocuments) {
         Test-RenderedDocument (Resolve-Path -LiteralPath $document).Path 'ProofFold'

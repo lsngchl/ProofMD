@@ -61,8 +61,11 @@ corepack, so it does not need to be on `PATH`.
 
 - `dotnet build` of the desktop project requires `dist-desktop/` from the web
   build.
-- The end-to-end test opens real ProofMD windows for a few seconds. Pass
-  `-ProofFoldDocuments <main.md>...` to also render real ProofFold documents.
+- The end-to-end test opens two real ProofMD windows, which take focus. Run it
+  once before a release or after changing the host, the WebView2 wiring, or
+  `index.html`, and tell the user first. `-ProofFoldDocuments <main.md>...`
+  opens one more window per document; use it sparingly. Check everything else
+  with the window-free tests or the stub-host harness.
 - The installer tests write only under `HKCU\Software\ProofMD.InstallerTests`
   and remove it afterwards.
 - Install the app on this machine only when the user asks.
