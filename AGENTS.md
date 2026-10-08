@@ -97,6 +97,6 @@ corepack, so it does not need to be on `PATH`.
 
 ## ProofFold
 
-`DocumentFormats/ProofFold/AGENTS.md` holds the authoring rules for ProofFold
-documents and the template folder. Viewer behavior for ProofFold is described in
-`README.md`.
+`DocumentFormats/ProofFold/README.md` describes the file structure ProofMD reads
+and the sample project. Authoring rules are kept with the research projects that
+use ProofFold. Viewer behavior for ProofFold is described in `README.md`.
