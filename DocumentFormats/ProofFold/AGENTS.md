@@ -1,199 +1,128 @@
 # ProofFold authoring rules
 
-## Core reading contract
+## Project directories
 
-Treat `main.md` as the canonical proof.  Write the argument there in its
-natural reading order from the statement to the final conclusion.
+- Name project directories `NN_project_name`, for example `01_project_name`.
+- Name subproject directories `NN-sMM_subproject_name`, for example
+  `01-s01_subproject_name`. `NN` is the parent project's number, and `MM` is
+  the subproject's number within that project.
+- For new projects and subprojects, use two-digit numbers starting at `01`.
+  Use lowercase names with words separated by underscores.
+- When normalizing existing directories, preserve established identifiers
+  such as `00`, `02a`, and `02b`, and keep archived projects in their archive.
+- Store new project and subproject directories directly under `ProofFold/`.
 
-A fold is a passage removed from that linear proof only to keep a lengthy
-calculation, hypothesis check, or technical reduction from obscuring the main
-line.  It is not an independent note.  It inherits every definition,
-hypothesis, convention, and piece of notation available at its insertion
-point.
+## Proof and folds
 
-Every fold boundary must support both readings:
+Write all ProofFold documents, including source audits and `notation.yaml`,
+in English.
 
-1. With the fold collapsed, `main.md` must state clearly what the fold proves,
-   and the text after the link may use exactly that result.
-2. With the fold expanded in place, the text before the link, the complete
-   fold, and the text after the link must read as one continuous argument.
+`main.md` is the canonical proof, ordered from the statement to the conclusion.
+A fold holds a lengthy calculation, hypothesis check, or technical reduction
+at its exact insertion point. It inherits all definitions, hypotheses,
+conventions, and local notation active there; do not repeat setup for standalone
+reading. End the passage when the parent has obtained the result it needs.
 
-The same rule applies recursively to a fold nested inside another fold.  Do
-not make a fold repeat the document setup merely so that it can be read alone.
-End it at the point where the parent document has obtained the result needed
-to continue.
+At every nesting level, the collapsed parent must state the result supplied by
+the fold and use exactly that result. State it as a precise claim, including
+its quantifiers and what any implicit constants depend on. Recursive expansion
+must yield one continuous proof. Outside fold links, proof prose must not refer
+to file organization. After moving passages, fix proximity language and
+equation references; labels must follow the expanded reading order.
 
-### Fold-blind proof prose
+Source material, including AI-generated drafts, is a lead, not a limit. Where
+a step is missing, wrong, or only sketched, work out a correct argument
+yourself. Write only steps you have checked, and mark a step `pending` only
+when a serious attempt fails to establish it. If a correct argument needs an
+extra hypothesis or gives a weaker conclusion, change the statement explicitly
+and report the change to the user. A step justified only by words such as
+"clearly", "standard", "similarly", or "it is easy to see" is a gap: give the
+argument, cite a source audit, or point to where the expanded proof
+establishes it.
 
-Write every passage in `main.md` and `folds/**/*.md` as though every fold link
-had been recursively replaced by its contents and the result were one
-continuous `main.md`.  A proof sentence must not depend on the reader knowing
-that a fold boundary or file boundary exists.
-
-Except for the `[Fold: ...]` link itself, proof prose must not refer to folds,
-files, parent or child documents, or collapsed or expanded state.  In
-particular, do not write “this fold,” “the preceding fold,” “the following
-fold,” “the linked fold,” “the dedicated fold,” or analogous expressions.
-Refer instead to mathematical content: a named calculation, hypothesis check,
-result, or equation number.  The word *fold* remains available for mathematical
-objects such as Whitney folds, fold atoms, fold phases, and fold geometry.
-
-When a passage is moved into or out of a fold, revise proximity language and
-equation references so that they remain correct in the recursively expanded
-linear proof.  Equation labels must occur in that natural reading order;
-claims may be announced in prose before a fold link and displayed with their
-labels after the folded derivation.
-
-## File roles
-
-- `main.md` contains the theorem and the complete visible proof line.
-- `folds/` contains only passages folded at specific insertion points.
-- `notation.yaml` records notation with a persistent document-wide meaning.
-- `references/` contains one source audit for each specialized external work.
-- `prooffold.json` records the machine-readable locations of those components.
-
-Do not create README files, a separate document index, progress summaries, or
-status ledgers.  Authoring instructions belong in this file.  The exact fold
-link is the only place where unfinished proof status is recorded.
-
-## Creating and completing folds
-
-First write or outline the proof in `main.md`.  Move a passage into `folds/`
-only when its role and its required conclusion are clear.  Give the file a
-descriptive lowercase hyphenated name and insert it at the exact point where
-its contents belong:
+First write or outline `main.md`; fold a passage only once its role and required
+conclusion are clear. Use descriptive lowercase hyphenated filenames and links
+relative to the containing file:
 
 ```markdown
-[Fold: description of the omitted passage](./folds/descriptive-name.md "fold")
+[Fold: description](./folds/descriptive-name.md "fold")
+[Fold (pending): description](./folds/descriptive-name.md "fold")
 ```
 
-For a nested fold, use the corresponding relative path from its parent file.
-Mirror the fold-containment graph in the directory tree, but keep that physical
-tree shallow enough to remain portable.  Here directory depth means the number
-of directories strictly between `folds/` and the fold file: `folds/foo.md` has
-depth zero and `folds/foo/bar.md` has depth one.
+For an unfinished passage or step, create its target and mark only the
+insertion link as `pending`. The target may retain established partial
+arguments and identify the remaining step; use an invisible placeholder comment
+if unwritten. Remove `pending` once the argument establishes the full result
+required by the parent.
 
-- Files linked directly from the project `main.md` live immediately under
-  `folds/` at depth zero.
-- At directory depths one and two, if `foo.md` contains a direct child fold,
-  store that child under the sibling directory `foo/`, using the full parent
-  stem.
-- At directory depths three and four, continue to mirror the parent--child
-  relation but use a unique, readable contraction of the parent stem for the
-  new directory.  Such a directory name must be at most 20 characters and
-  must not be an opaque serial, hash, or generic label such as `calc1`.
-- Do not create a fold below directory depth four.  A fold at depth four may
-  not contain another fold link.  If the proof appears to require a deeper
-  fold, merge that calculation into its parent or reorganize an earlier proof
-  division; never omit the required argument.
+Record component locations in `prooffold.json`. Do not add README files,
+separate indexes, progress summaries, or status ledgers. Keep authoring
+instructions here.
 
-Every fold filename, including the `.md` extension, must be at most 48
-characters.  Every repository-root-relative fold path must be at most 180
-characters, and its absolute path in the active checkout must be at most 220
-characters.  Shorten descriptive stems or reorganize the fold hierarchy before
-crossing any of these limits; do not rely on platform-specific long-path
-settings.
+## Fold paths
 
-The directory relation records only where a passage is inserted.  It does not
-turn a nested fold into an independent document or alter the inherited reading
-context.
+Mirror fold containment in the directory tree. Depth counts directories between
+`folds/` and the file, so `folds/foo.md` has depth zero.
 
-If a required passage has not yet been written, create its target file with
-only an invisible placeholder comment and label the link:
+- Folds inserted directly into `main.md` live at depth zero.
+- At every depth, store children of `foo.md` in its sibling directory `foo/`,
+  using the full parent stem.
+- Filename stems, including hyphens, must be at most 16 characters; aim for
+  10–14. Use the surrounding path as context and put fuller descriptions in
+  fold link text.
+- Maximum depth: four. A fold at depth four cannot contain a fold link.
+- Maximum path lengths: repository-relative, 180 characters; absolute checkout,
+  220 characters.
 
-```markdown
-[Fold (pending): description of the missing passage](./folds/descriptive-name.md "fold")
-```
+Shorten names, merge passages, or reorganize the proof to meet these limits
+without omitting arguments or relying on platform-specific long-path settings.
 
-Do not describe the same gap elsewhere.  Once the argument is written, remove
-`pending` from the link.  A completed fold must establish precisely the result
-that the collapsed parent text assumes.
+## Notation
 
-## Notation registry
+Introduce symbols at first use. Before assigning a non-dummy symbol, consult
+`notation.yaml` and search for the symbol's earlier uses in the expanded proof.
+Preserve active local bindings across fold boundaries. Reuse a symbol for
+another role only after its earlier role has clearly ended and cannot
+reasonably carry forward.
+Distinguish simultaneous scales and indices, introducing their roles together
+before the decomposition.
 
-Introduce symbols naturally where the proof first needs them.  Whenever a
-symbol acquires a persistent document-wide meaning, add one entry to
-`notation.yaml` with `symbol`, `name`, `meaning`, and `introduced_at`.
+Register persistent document-wide notation with `symbol`, `name`, `meaning`,
+and `introduced_at`. Exclude bound variables, dummy indices, temporary scales,
+and standard syntax; do not add `scope`. Reserve recurring semantic roles in
+`conventions.reserved_symbols`, including local-looking symbols used across
+proof stages. Keep general naming rules in `conventions.naming_rules`.
 
-Record only genuinely persistent notation.  Do not register bound variables,
-dummy indices, temporary scale parameters, or standard mathematical syntax.
-The registry contains only global notation, so do not add a `scope` field.
-Before assigning a non-dummy symbol a meaning, consult `notation.yaml` and
-search its earlier uses in the recursively expanded proof.  Do not reuse it
-for a visibly different mathematical role, or for two different kinds of
-scale in the same local stretch of argument; reuse is acceptable only after
-the earlier role has clearly ended and a reader would not plausibly carry it
-forward.
+After substantial additions or reorganization, review repeated non-dummy
+symbols throughout the expanded proof, including unregistered ones, and remove
+confusing changes of meaning.
 
-The registry also records document-wide notation conventions.  Reserve a
-local-looking symbol there when it keeps one semantic role across several
-stages of the expanded proof, and record general naming rules separately from
-named mathematical objects.  Do not use this mechanism to register disposable
-dummy variables.
+## Source audits
 
-Registration in `reserved_symbols` is selective, but notation consistency is
-mandatory.  After adding or reorganizing a substantial passage, review
-repeated non-dummy symbols in the fully expanded proof and eliminate any
-confusing change of meaning whether or not those symbols are registered.
+Audit specialized results imported from the literature in `references/` and
+link the audits at the point of use. An audit may cover multiple works;
+distinguish each work's citation, inspected locations, and actual contribution.
+Check primary sources; treat secondary notes and downloaded derivations as
+leads. Record:
 
-Local notation is scoped by the fully expanded linear proof, not by file
-boundaries.  A fold and every nested fold inherit the local bindings active at
-their insertion point and must not reassign them.  When a long passage uses
-several simultaneous scales or indices, introduce their roles together before
-the decomposition.  If a local role survives beyond that passage or recurs in
-several proof stages, promote it to a document-wide convention.
+- Exact edition/version, stable citation, and inspected theorem, definition,
+  equation, and page locations.
+- What the source actually proves, including its hypotheses and scope.
+- Where it is cited and whether the source supports the attributed result.
 
-## Reference audits
+Write all project-local reasoning once in the proof flow of `main.md` or
+`folds/**/*.md`, including why each source hypothesis holds and any rescaling,
+normalization, compactness, or continuity bridge. Source audits may link to
+these passages; do not move or duplicate them into audits, or replace them in
+the proof with audit links.
 
-For every specialized result imported from the literature, create one audit
-under `references/` for the cited work and link it at the point of use.  Each
-audit must record:
+## Completion
 
-- the exact edition or version and stable citation;
-- the inspected theorem, definition, equation, and page locations;
-- what the source actually proves;
-- where and how ProofFold uses it;
-- every source hypothesis and its project-local verification;
-- any additional rescaling, normalization, compactness, or continuity bridge;
-- a direct verdict stating whether the imported form is justified.
+Before declaring completion, review the collapsed and fully expanded proof
+against these rules, and check:
 
-A reference audit is not part of the canonical proof.  It may verify an
-imported result and its hypotheses, but every project-local argument needed
-to obtain the next claim must appear in `main.md` or `folds/**/*.md`.
-
-Treat secondary notes and downloaded derivations as leads, not as authority.
-Check specialized claims against the primary source.  In particular,
-distinguish identities valid only on the incidence set from identities needed
-on an amplitude neighborhood, and recompute any off-incidence extension used
-to verify a source class.
-
-## Completion checks
-
-Before declaring the proof complete, verify all of the following:
-
-- `main.md` is readable with every fold collapsed;
-- recursively expanding every fold gives a continuous proof;
-- after recursive expansion, no proof sentence depends on knowing a fold or
-  file boundary, and no organizational fold/file language remains outside the
-  fold links themselves;
-- no `Fold (pending)` link or placeholder remains;
-- every fold is linked from its actual insertion point and no fold is orphaned;
-- the fold directory tree matches the parent--child links and satisfies the
-  depth, segment, filename, repository-relative-path, and absolute-path limits
-  stated above;
-- every imported specialized result has a linked source audit;
-- no proof step needed in the expanded argument is supplied only by a source audit;
-- all relative links and all paths in `prooffold.json` resolve;
-- `notation.yaml` parses, has no duplicate symbol, and every `introduced_at`
-  path exists;
-- repeated non-dummy symbols have been reviewed in the fully expanded proof,
-  and no confusing change of meaning remains;
-- equation labels are unique and occur in natural reading order in the fully
-  expanded document;
-- Markdown tables, code fences, and mathematics delimiters render correctly;
-- exact formulas used off incidence have been checked with the definitions
-  actually imposed by the cited source, not merely with an incidence-equivalent
-  formula.
-
-Keep an unfinished marker only at the exact missing fold.  Do not dilute proof
-status by scattering caveats through `main.md` or unrelated files.
+- No pending links, placeholders, or orphan folds.
+- All relative links and `prooffold.json` paths resolve; `notation.yaml` parses,
+  has no duplicate symbol, and every `introduced_at` path exists.
+- Equation labels are unique; Markdown tables, code fences, and math delimiters
+  render correctly.
