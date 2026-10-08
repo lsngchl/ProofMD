@@ -118,11 +118,16 @@ the proof with audit links.
 
 ## Completion
 
-Before declaring completion, review the collapsed and fully expanded proof
-against these rules, and check:
+`_tools/check_prooffold.py` in the ResearchDB folder that contains this
+research folder checks pending links, placeholders, orphan folds, fold paths,
+links, `prooffold.json`, `notation.yaml`, equation labels, and math
+delimiters. During writing, run it with `--allow-pending` on the project you
+are changing:
 
-- No pending links, placeholders, or orphan folds.
-- All relative links and `prooffold.json` paths resolve; `notation.yaml` parses,
-  has no duplicate symbol, and every `introduced_at` path exists.
-- Equation labels are unique; Markdown tables, code fences, and math delimiters
-  render correctly.
+```sh
+python <ResearchDB>/_tools/check_prooffold.py --allow-pending ProofFold/<project>
+```
+
+Before declaring completion, run it without `--allow-pending` and fix every
+error. Then review the collapsed and fully expanded proof against these rules,
+and check that Markdown tables render correctly.
